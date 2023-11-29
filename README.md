@@ -27,3 +27,10 @@ In contrast, here is an example of a plant with several small, dense clustered c
 
 Finally, this accession exhibits uniformly sparse canopy, with most of the leaves growing at the margins of the plant.
 ![Accession Ta00696: A plant exhibiting sparse growth](assets/Ta00696.jpg)
+
+### Image Mask Generation
+
+### Quadrat Corner Detection
+
+### Semantic Segmentation Model
+
