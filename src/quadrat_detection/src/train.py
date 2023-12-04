@@ -2,6 +2,7 @@
 import pandas as pd
 import os
 from pytorch_lightning import Trainer
+from typing import List
 
 from dataset_adaptor import QuadratDatasetAdaptor
 from effdet_datamodule import EfficientDetDataModule
@@ -59,7 +60,7 @@ model = EfficientDetModel(
 trainer = Trainer(
         accelerator='gpu',
         devices=1,
-        max_epochs=5, num_sanity_val_steps=1,
+        max_epochs=50, num_sanity_val_steps=1,
     )
 
 trainer.fit(model, dm)
