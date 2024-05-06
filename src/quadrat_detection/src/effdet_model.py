@@ -39,7 +39,8 @@ class EfficientDetModel(LightningModule):
         num_classes=1,
         img_size=512,
         prediction_confidence_threshold=0.2,
-        learning_rate=0.0002,
+        learning_rate=0.001,
+        gamma=0.8,
         wbf_iou_threshold=0.44,
         inference_transforms=get_valid_transforms(target_img_size=512),
         model_architecture='tf_efficientnetv2_l',
@@ -56,13 +57,15 @@ class EfficientDetModel(LightningModule):
         self.validation_step_outputs = []
         self.validation_step_preds = []
 
-
     # @auto_move_data
     def forward(self, images, targets):
         return self.model(images, targets)
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.model.parameters(), lr=self.lr)
+        optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr)
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=0.8)
+        
+        return [optimizer], [scheduler]
 
 
     def training_step(self, batch, batch_idx):
@@ -75,14 +78,52 @@ class EfficientDetModel(LightningModule):
             "box_loss": losses["box_loss"].detach(),
         }
 
-        self.log("train_loss", losses["loss"], on_step=True, on_epoch=True, prog_bar=True,
-                 logger=True)
-        self.log(
-            "train_class_loss", losses["class_loss"], on_step=True, on_epoch=True, prog_bar=True,
+        self.log_dict(
+            {
+                "train_loss": losses["loss"],
+                "step": self.current_epoch
+            },
+            prog_bar=True,
+            on_epoch=True,
+            on_step=False,
             logger=True
         )
-        self.log("train_box_loss", losses["box_loss"], on_step=True, on_epoch=True, prog_bar=True,
-                 logger=True)
+
+        self.log_dict(
+            {
+                "train_box_loss": losses["box_loss"],
+                "step": self.current_epoch
+            },
+            prog_bar=True,
+            on_epoch=True,
+            on_step=False,
+            logger=True
+        )
+
+        self.log_dict(
+            {
+                "train_class_loss": losses["class_loss"],
+                "step": self.current_epoch
+            },
+            prog_bar=True,
+            on_epoch=True,
+            on_step=False,
+            logger=True
+        )
+
+
+
+        # self.log("train_loss", losses["loss"], on_step=False, on_epoch=True, prog_bar=True,
+        #          logger=True)
+        # self.log("train_loss_step", losses["loss"], on_step=True, on_epoch=False, prog_bar=True,
+        #          logger=True,  )
+        
+        # self.log(
+        #     "train_class_loss", losses["class_loss"], on_step=False, on_epoch=True, prog_bar=True,
+        #     logger=True
+        # )
+        # self.log("train_box_loss", losses["box_loss"], on_step=False, on_epoch=True, prog_bar=True,
+        #          logger=True)
 
         return losses['loss']
 
@@ -105,14 +146,50 @@ class EfficientDetModel(LightningModule):
             "box_loss": outputs["box_loss"].detach(),
         }
 
-        self.log("valid_loss", outputs["loss"], on_step=True, on_epoch=True, prog_bar=True,
-                 logger=True, sync_dist=True)
-        self.log(
-            "valid_class_loss", logging_losses["class_loss"], on_step=True, on_epoch=True,
-            prog_bar=True, logger=True, sync_dist=True
+        self.log_dict(
+            {
+                "val_loss": outputs["loss"],
+                "step": self.current_epoch
+            },
+            prog_bar=True,
+            on_epoch=True,
+            on_step=False,
+            logger=True
         )
-        self.log("valid_box_loss", logging_losses["box_loss"], on_step=True, on_epoch=True,
-                 prog_bar=True, logger=True, sync_dist=True)
+
+        self.log_dict(
+            {
+                "val_box_loss": outputs["box_loss"],
+                "step": self.current_epoch
+            },
+            prog_bar=True,
+            on_epoch=True,
+            on_step=False,
+            logger=True
+        )
+
+        self.log_dict(
+            {
+                "val_class_loss": outputs["class_loss"],
+                "step": self.current_epoch
+            },
+            prog_bar=True,
+            on_epoch=True,
+            on_step=False,
+            logger=True
+        )
+
+        # self.log("val_loss", outputs["loss"], on_step=False, on_epoch=True, prog_bar=True,
+        #          logger=True, sync_dist=True)
+        
+        # self.log("val_loss_step", outputs["loss"], on_step=True, on_epoch=False, prog_bar=True,
+        #          logger=True, sync_dist=True)
+        # self.log(
+        #     "val_class_loss", logging_losses["class_loss"], on_step=False, on_epoch=True,
+        #     prog_bar=True, logger=True, sync_dist=True
+        # )
+        # self.log("val_box_loss", logging_losses["box_loss"], on_step=False, on_epoch=True,
+        #          prog_bar=True, logger=True, sync_dist=True)
         
         self.validation_step_outputs.append(outputs['loss'])
         self.validation_step_preds.append({'loss': outputs["loss"], 'batch_predictions': batch_predictions})

@@ -15,8 +15,7 @@ def get_train_transforms(img_size: tuple[int, int]):
             A.HorizontalFlip(p=0.5),
             A.RandomBrightnessContrast(p=0.4),
             A.Flip(p=0.5),
-            A.Rotate(limit=25),
-            ToTensorV2(always_apply=True)
+            A.Rotate(limit=25)
         ],
         is_check_shapes=True
     )

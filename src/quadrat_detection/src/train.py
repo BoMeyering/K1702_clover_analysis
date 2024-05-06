@@ -9,6 +9,9 @@ from effdet_datamodule import EfficientDetDataModule
 from effdet_model import EfficientDetModel
 from create_model import create_model
 
+from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor, EarlyStopping
+
 # Settings
 
 IMG_DIR = "./data/images/"
@@ -57,10 +60,34 @@ model = EfficientDetModel(
     img_size=512
     )
 
+# Set up logger
+logger = TensorBoardLogger("./src/quadrat_detection/runs", name=f"quad_det_")
+
+# Callbacks
+lr_monitor = LearningRateMonitor(logging_interval='epoch')
+
+checkpoint_callback = ModelCheckpoint(
+    save_top_k=5,
+    monitor="val_loss",
+    mode="min",
+    filename="quadrat_effdet-{epoch:02d}-{val_loss:.3f}",
+    save_on_train_epoch_end=True
+)
+
+early_stopping = EarlyStopping(
+    monitor="val_loss",
+    min_delta=0.00,
+    patience=5,
+    mode='min'
+)
+
+# Instantiate trainer and fit model
 trainer = Trainer(
         accelerator='gpu',
         devices=1,
-        max_epochs=50, num_sanity_val_steps=1,
+        max_epochs=30, num_sanity_val_steps=1,
+        logger=logger,
+        callbacks=[lr_monitor, checkpoint_callback, early_stopping]
     )
 
 trainer.fit(model, dm)
