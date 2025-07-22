@@ -159,8 +159,10 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-data/**.mat
-data/**.png
-data/**.jpg
+data/processed/images/*.jpg
+data/processed/targets/*.png
+data/raw/images/*.jpg
+data/raw/mat_files/*.mat
+
 **.pth
 **.pt
