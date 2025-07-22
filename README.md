@@ -19,6 +19,10 @@ Our lab grew out 1135 unique accesssions of kura clover for our clover breeding 
 
 ### Image Examples
 
+We acquired images of individual kura clover accessions grown in the field. Each plant was demarcated using a standard sampling quadrat constructed of 3/4" Schedule 40 PVC pipe. Quadrat dimensions were as follows:
+* OD (HxW) = 18"x18"
+* ID (HxW) = 16.25"
+
 Here is an example of one of the plants with a small but very dense canopy
 ![Accession Ta00070: A small, but dense plant](assets/Ta00070.jpg)
 
