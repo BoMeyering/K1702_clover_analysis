@@ -126,11 +126,11 @@ class SegTrainer:
         targets = targets.to(self.device)
 
         # Forward pass through the model and compute loss
-        output = self.model(imgs)
+        logits = self.model(imgs)
 
-        upsampled_logits = F.interpolate(output['logits'], size=(512, 512), mode="bilinear", align_corners=False)
+        # upsampled_logits = F.interpolate(output['logits'], size=(512, 512), mode="bilinear", align_corners=False)
 
-        train_loss = self.criterion(upsampled_logits, targets.long())
+        train_loss = self.criterion(logits, targets.long())
 
         return train_loss
     
@@ -178,11 +178,11 @@ class SegTrainer:
         targets = targets.to(self.device)
 
         # Forward pass through model and compute loss
-        output = self.model(imgs)
+        logits = self.model(imgs)
 
-        upsampled_logits = F.interpolate(output['logits'], size=(512, 512), mode="bilinear", align_corners=False)
+        # upsampled_logits = F.interpolate(output['logits'], size=(512, 512), mode="bilinear", align_corners=False)
 
-        val_loss = self.criterion(upsampled_logits, targets.long())
+        val_loss = self.criterion(logits, targets.long())
 
         return val_loss
 
