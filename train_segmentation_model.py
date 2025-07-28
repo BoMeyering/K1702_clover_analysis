@@ -23,7 +23,7 @@ from torch import argmax
 from pathlib import Path
 
 model_config = {
-    "architecture": "Unet",
+    "architecture": "Segformer",
     "encoder_name": "mit_b1",
     "encoder_depth": 5,
     "encoder_weights": "imagenet",
@@ -104,25 +104,25 @@ def main():
 
     logger.info(f"Created model trainer class {type(seg_trainer)}")
 
-    seg_trainer.train()
-    # model.eval()
+    # seg_trainer.train()
+    model.eval()
 
-    # state_dict = torch.load('checkpoints/segmentation_models/Unet_mit_b1_1024_epoch_10_vloss-0.032001.pth', map_location=device)['model_state_dict']
-    # model.load_state_dict(state_dict)
+    state_dict = torch.load('checkpoints/segmentation_models/Segformer_mit_b1_1024_epoch_10_vloss-0.032614.pth', map_location=device)['model_state_dict']
+    model.load_state_dict(state_dict)
 
-    # for index in range(len(val_ds)):
-    #     img, target, img_id = val_ds[index]
-    #     print(img.shape, target.shape, img_id)
+    for index in range(len(val_ds)):
+        img, target, img_id = val_ds[index]
+        print(img.shape, target.shape, img_id)
 
-    #     img = img.unsqueeze(0)
-    #     logits = model(img)
+        img = img.unsqueeze(0)
+        logits = model(img)
 
-    #     # upsampled_logits = F.interpolate(output['logits'], size=(512, 512), mode="bilinear", align_corners=False)
-    #     preds = argmax(logits, dim=1).squeeze(0).cpu().numpy()
+        # upsampled_logits = F.interpolate(output['logits'], size=(512, 512), mode="bilinear", align_corners=False)
+        preds = argmax(logits, dim=1).squeeze(0).cpu().numpy()
 
-    #     print(preds.shape)
+        print(preds.shape)
 
-    #     cv2.imwrite(Path('outputs/segmentation') / (img_id + "_preds.png"), preds*50)
+        cv2.imwrite(Path('outputs/segmentation') / (img_id + "_preds.png"), preds*50)
 
 if __name__ == '__main__':
     main()
