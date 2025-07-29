@@ -83,7 +83,7 @@ class ObjDetDataset(Dataset):
         self.data_dir = Path(data_dir)
         self.img_dir = self.data_dir / 'processed' / 'images'
         # self.target_dir = self.data_dir / 'processed' / 'targets'
-        self.transforms = transforms(resize=(512, 512))
+        self.transforms = transforms(resize=img_resize)
 
         # Grab img ids
         self.img_ids = pl.read_csv(self.data_dir / 'data_split.csv')\
@@ -131,10 +131,15 @@ class ObjDetDataset(Dataset):
 
         # Grab the transformed images, bounding boxes and labels
         img = augmented['image']
-        targets = augmented['bboxes']
+        bboxes = augmented['bboxes']
         labels = [int(x) for x in augmented['labels']]
 
-        return img , targets, labels, img_id
+        _, new_h, new_w = img.shape
+        bboxes = torch.as_tensor(bboxes ,dtype = torch.float32)
+        labels = torch.as_tensor(labels)
+
+        return img , bboxes, labels, img_id
+
 
     def __len__(self):
         return len(self.img_ids)
