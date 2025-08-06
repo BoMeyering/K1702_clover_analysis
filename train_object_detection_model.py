@@ -9,21 +9,16 @@ import logging
 from torch.utils.data import DataLoader
 from torch.optim import SGD
 from torch.optim.lr_scheduler import ExponentialLR
+from src.models import create_effdet_model
 from src.datasets import ObjDetDataset
 from src.transforms import get_train_obj_transforms, get_val_obj_transforms
 from src.trainer import ObjTrainer
 from src.utils.loggers import setup_loggers
-from effdet import DetBenchTrain
-from effdet import EfficientDet
-from effdet import get_efficientdet_config
-from effdet.efficientdet import HeadNet
-
-import cv2
 from pathlib import Path
 
 model_config = {
-    "architecture": "FasterRCNN",  # or your detection model architecture
-    "backbone_name": "resnet50",
+    "architecture": "EfficientDet",  # or your detection model architecture
+    "backbone_name": "efficientdet_d0",
     "pretrained": True,
     "num_classes": 3   # including background class
 }
@@ -35,40 +30,29 @@ MODEL_RUN_NAME = "_".join([model_config['architecture'], model_config['backbone_
 
 
 def custom_collate(batch):
-    imgs, bboxes, labels, img_ids = tuple(zip(*batch))
-    imgs = torch.stack(imgs)  # (B, C, H, W)
+    images, targets, image_ids = tuple(zip(*batch))
+    images = torch.stack(images)
+    images = images.float()
 
-    bboxes = list(bboxes)
-    labels = list(labels)
+    boxes = [target["bboxes"].float() for target in targets]
+    labels = [target["cls"].float() for target in targets]
+    img_size = [target["img_size"].float() for target in targets]
+    img_scale = [target["img_scale"].float() for target in targets]
 
-    target= {
-        "bbox": bboxes,
+    annotations = {
+        "bbox": boxes,
         "cls": labels,
+        "img_size": img_size,
+        "img_scale": img_scale,
     }
-    
-    return imgs, target, list(img_ids)
 
+    return images, annotations, image_ids
 
-def create_model(num_classes: int=3, image_size: tuple=(1024, 1024), architecture: str='efficientdet_d0', max_det_per_image: int=50):
-    config = get_efficientdet_config(architecture)
-
-    config.update({'num_classes': num_classes})
-    config.update({'image_size': image_size})
-    config.update({'max_det_per_image': max_det_per_image})
-
-    net = EfficientDet(config, pretrained_backbone=True)
-
-    net.class_net = HeadNet(
-        config=config,
-        num_outputs=config.num_classes
-    )
-
-    return DetBenchTrain(net, config) #why red find out
-model = create_model(image_size=IMG_RESIZE)
+model = create_effdet_model(image_size=IMG_RESIZE)
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-# Optimizer
 
+# Optimizer
 optimizer = SGD(params=model.parameters(), lr=0.005, momentum=0.9, weight_decay=0.0005)
 # logging.info(f"Set optimizer {type(optimizer)}")
 

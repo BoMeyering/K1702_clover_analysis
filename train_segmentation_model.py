@@ -10,7 +10,6 @@ from torch.utils.data import DataLoader
 from torch.optim import SGD
 from torch.optim.lr_scheduler import ExponentialLR
 from torch.nn import CrossEntropyLoss
-from src.models import create_model
 from src.datasets import SegmentationDataset, ObjDetDataset
 from src.transforms import get_train_seg_transforms, get_val_seg_transforms, get_train_obj_transforms
 from src.trainer import SegTrainer

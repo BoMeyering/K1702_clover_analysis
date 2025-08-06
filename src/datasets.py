@@ -137,10 +137,15 @@ class ObjDetDataset(Dataset):
         _, new_h, new_w = img.shape
         bboxes = torch.as_tensor(bboxes ,dtype = torch.float32)
         labels = torch.as_tensor(labels)
+        
+        target = {
+            "bboxes": torch.as_tensor(bboxes),
+            "cls": torch.as_tensor(labels),
+            "img_size": torch.as_tensor([new_h, new_w]),
+            "img_scale": torch.tensor([1.0]),
+        }
 
-        return img , bboxes, labels, img_id
-
-
+        return img, target, img_id
     def __len__(self):
         return len(self.img_ids)
     
