@@ -1,63 +1,23 @@
-# K1702_clover_analysis
-Semantic segmentation code for analyzing images of kura clover plants in K1702.
-
-## Dataset
-### Description
-The goal of this project is to detect and segment field-grown Kura clover (Trifolium ambiguum L.) plants, and calculate some standardized metrics and shape descriptions and train an object detection and semantic segmentation models for images of individual kura clover plants taken within a pvc sampling quadrat.
-
-***
-
-### Background and Workflow
-Our lab grew out 1135 unique accesssions of kura clover for our clover breeding program. We want to train a model to effectively mask the kura clover against the soil and evaluated shape and density parameters of the plant against the defined ROI (PVC quadrat). The general workflow is as follows:
-* Annotate all of the images in Labelbox. Classes include `quadrat_corner`, `kura_point`, `quadrat_point`, and `soil_point`.
-* Using the point prompts, generate masks for the entire image using the Segment-Anything ([SAM](https://segment-anything.com/)) from Meta AI as ground truth segmentation masks.
-* Develop two different models: EfficientDet object detector to locate the corners of the PVC quadrat, and a DeepLabV3 semantic segmentation model to mask the clover plants, soil and quadrat. 
-* Using the 4 detected corner points, we will transform the masked image to the correct relative dimensions of the PVC quadrat to remove skew distortions introduced by semi-oblique imaging.
-* Measure standard shape descriptors of the kura mask, as well as perform connected components analysis
-* Report family-wise density estimates and compute breeding values for each of the accessions, producing a ranking for each accession based on how compact or sparse it is.
-
-***
-
-### Image Examples
-
-We acquired images of individual kura clover accessions grown in the field. Each plant was demarcated using a standard sampling quadrat constructed of 3/4" Schedule 40 PVC pipe. Quadrat dimensions were as follows:
-* OD (HxW) = 18"x18"
-* ID (HxW) = 16.25"
-
-Here is an example of one of the plants with a small but very dense canopy
-![Accession Ta00070: A small, but dense plant](assets/Ta00070.jpg)
-
-In contrast, here is an example of a plant with several small, dense clustered canopies results from rhizomatous growth below the soil.
-![Accession Ta00079: A plant exhibiting rhizomatous growth](assets/Ta00079.jpg)
-
-Finally, this accession exhibits uniformly sparse canopy, with most of the leaves growing at the margins of the plant.
-![Accession Ta00696: A plant exhibiting sparse growth](assets/Ta00696.jpg)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # K1702 Clover Analysis :four_leaf_clover:
-Semantic segmentation and object detection pipeline for analyzing images of field-grown Kura clover (Trifolium ambiguum L.) plants.
+## Semantic segmentation and object detection pipeline for analyzing images of field-grown Kura clover (Trifolium ambiguum L.) plants.
+Authors
+- [Bo Meyering](https://github.com/BoMeyering)
+- [Mirza Sakiroglu](https://github.com/MirzaSakiroglu)
 
+## Environment Setup
+Create a new virtual environment using your favorite (venv, conda, pyenv, etc.)
+Install all dependencies
+```
+$ pip install -r requirements
+```
+
+## Training Scripts
+You can directly train the models in your environment by calling them directly
+```
+$ python train_object_detection_model.py
+$ python train_segmentation_model.py
+```
+The top k=5 best model runs (based on the validation loss) will be stored in `checkpoints`.
 ## Dataset Overview :open_file_folder:
 The Perennial Legumes Program at The Land Institute cultivated XXXX unique accessions from the USDA National Plant Germplasm System (NPGS) in the summer of 2017. Each plant was cultivated as a single plant plot. Plots were imaged with a Canon DLSR camera at least one time during the season. Clover plant were framed by a standard sampling quadrat constructed of 3/4" Schedule 40 PVC pipe with the following dimensions:
 * OD (HxW) = 18"x18"
@@ -93,35 +53,34 @@ This project focuses on segmenting and analyzing Kura clover plants grown in the
 6. Rank accessions based on desired phenotypic traits and map to geographic origin.
 7. Breeding values are computed for each accession based on shape/density metrics, enabling selection based on compactness, vigor, or spread.
 
-## Model Development :computer:
-We will train two models for this pipeline:
+## Model and Pipeline Development :computer:
+### Deep Learning Models:
 * Object Detection (Quadrat Corner Detection): We use an EfficientDet-based object detector to locate the four PVC quadrat corners using the Ross Wightman ```effdet``` library. [https://github.com/rwightman/efficientdet-pytorch](https://github.com/rwightman/efficientdet-pytorch)
 * Semantic Segmentation (Plant/Soil/Quadrat): We will experiment with several different model architectures to segment kura clover from soil and quadrat background using the ```segmentation-models-pytorch``` [https://github.com/qubvel-org/segmentation_models.pytorch](https://github.com/qubvel-org/segmentation_models.pytorchlibrary).
 
-Geometric Correction
+### Geometric Correction
 Detected quadrat corners are used to perform a perspective transform, warping the image to a standardized top-down view to correct for skew and perspective distortion.
 
-Feature Extraction
+### Feature Extraction
 From the warped segmentation masks, we extract standardized shape and density features using:
+* Shape descriptors (e.g., area, solidity, convexity)
+* Connected components analysis,
+* Family-wise density estimates.
+* Breeding Value Computation
+* Breeding values are computed for each accession based on shape/density metrics, enabling selection based on compactness, vigor, or spread.
 
-Shape descriptors (e.g., area, solidity, convexity),
+## Example Images with Annotations 🖼️ 
+### Accession Ta00070
+Here is an example of one of the plants with a small but very dense canopy
+<img src="assets/Ta00070_20170703.jpg" width="700">
 
-Connected components analysis,
+### Accession Ta00079
+In contrast, here is an example of a plant with several small, dense clustered canopies results from rhizomatous growth below the soil.
+<img src="assets/Ta00079_20170703.jpg" width="700">
 
-Family-wise density estimates.
-
-Breeding Value Computation
-Breeding values are computed for each accession based on shape/density metrics, enabling selection based on compactness, vigor, or spread.
-
-## Example Images 🖼️ 
-Dense, Small Canopy
-Accession Ta00070
-
-Rhizomatous Growth
-Accession Ta00079
-
-Sparse, Margin Growth
-Accession Ta00696
+### Accesssion Ta00696
+Finally, this accession exhibits uniformly sparse canopy, with most of the leaves growing at the margins of the plant.
+<img src="assets/Ta00696_20170703.jpg" width="700">
 
 ## Feature Outputs 📊 
 * From the warped masks, we compute:
