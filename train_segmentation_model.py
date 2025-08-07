@@ -10,7 +10,6 @@ from torch.utils.data import DataLoader
 from torch.optim import SGD
 from torch.optim.lr_scheduler import ExponentialLR
 from torch.nn import CrossEntropyLoss
-from src.models import create_model
 from src.datasets import SegmentationDataset, ObjDetDataset
 from src.transforms import get_train_seg_transforms, get_val_seg_transforms, get_train_obj_transforms
 from src.trainer import SegTrainer
@@ -36,31 +35,31 @@ CHECKPOINT_DIR = 'checkpoints/segmentation_models'
 IMG_RESIZE = (1024, 1024)
 MODEL_RUN_NAME = "_".join([model_config['architecture'], model_config['encoder_name'], str(IMG_RESIZE[0])])
 
-setup_loggers(model_run=MODEL_RUN_NAME, log_dir='logs', log_level='INFO')
+# setup_loggers(model_run=MODEL_RUN_NAME, log_dir='logs', log_level='INFO')
 
-logger = logging.getLogger()
+# logger = logging.getLogger()
 
 def main():
     # Set device
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    logger.info(f"Set computational device: {device}")
+    # logger.info(f"Set computational device: {device}")
 
     # Create model
     model = create_smp_model(config=model_config)
     model = model.to(device)
-    logger.info(f"Instantiated segmentation model {type(model)} and sent to computational device {device}.")
+    # logger.info(f"Instantiated segmentation model {type(model)} and sent to computational device {device}.")
 
     # Optimizer
     optimizer = SGD(params=model.parameters(),momentum=0.9, nesterov=True)
-    logger.info(f"Set optimizer {type(optimizer)}")
+    # logger.info(f"Set optimizer {type(optimizer)}")
 
     # LR Scheduler
     scheduler = ExponentialLR(optimizer=optimizer, gamma=0.99)
-    logger.info(f"Set scheduler {type(scheduler)}")
+    # logger.info(f"Set scheduler {type(scheduler)}")
 
     # Set loss function
     criterion = CrossEntropyLoss()
-    logger.info(f"Set loss criterion {type(criterion)}")
+    # logger.info(f"Set loss criterion {type(criterion)}")
 
     # Create datasets
     train_ds = SegmentationDataset(
@@ -102,7 +101,7 @@ def main():
         checkpoint_dir=CHECKPOINT_DIR
     )
 
-    logger.info(f"Created model trainer class {type(seg_trainer)}")
+    # logger.info(f"Created model trainer class {type(seg_trainer)}")
 
     # seg_trainer.train()
     model.eval()

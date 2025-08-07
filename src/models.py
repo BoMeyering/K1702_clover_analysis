@@ -8,6 +8,28 @@ import torch
 import inspect
 import segmentation_models_pytorch as smp
 from transformers import SegformerForSemanticSegmentation
+from effdet import DetBenchTrain
+from effdet import EfficientDet
+from effdet import get_efficientdet_config
+from effdet.efficientdet import HeadNet
+
+
+
+def create_effdet_model(num_classes: int=3, image_size: tuple=(1024, 1024), architecture: str='efficientdet_d0', max_det_per_image: int=50, pretrained: bool=True):
+    config = get_efficientdet_config(architecture)
+
+    config.update({'num_classes': num_classes})
+    config.update({'image_size': image_size})
+    config.update({'max_det_per_image': max_det_per_image})
+
+    net = EfficientDet(config, pretrained_backbone=pretrained)
+
+    net.class_net = HeadNet(
+        config=config,
+        num_outputs=config.num_classes
+    )
+
+    return DetBenchTrain(net, config)
 
 
 def create_smp_model(config: dict) -> torch.nn.Module:
