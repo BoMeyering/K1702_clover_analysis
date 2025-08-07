@@ -230,7 +230,6 @@ class ObjTrainer(BaseTrainer):
 
     def _train_step(self, batch):
         """ Train one batch step """
-        self.model.train()
 
         # Unpack the batch
         imgs, targets, img_id = batch
