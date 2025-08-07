@@ -123,7 +123,7 @@ Accession Ta00079
 Sparse, Margin Growth
 Accession Ta00696
 
-# Feature Outputs 📊 
+## Feature Outputs 📊 
 * From the warped masks, we compute:
 * Total clover area
 * Convex hull area
