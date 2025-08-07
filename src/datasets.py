@@ -73,17 +73,16 @@ class SegmentationDataset(Dataset):
 class ObjDetDataset(Dataset):
     def __init__(
             self, 
-            transforms: Compose, 
-            data_dir: Union[Path, str]='data', 
-            split: str='train', 
-            img_resize: Tuple=(512, 512)
+            transforms: Compose,
+            data_dir: Union[Path, str]='data',
+            split: str='train'
         ):
 
         self.split = split
         self.data_dir = Path(data_dir)
         self.img_dir = self.data_dir / 'processed' / 'images'
         # self.target_dir = self.data_dir / 'processed' / 'targets'
-        self.transforms = transforms(resize=img_resize)
+        self.transforms = transforms
 
         # Grab img ids
         self.img_ids = pl.read_csv(self.data_dir / 'data_split.csv')\
@@ -139,13 +138,14 @@ class ObjDetDataset(Dataset):
         labels = torch.as_tensor(labels)
         
         target = {
-            "bboxes": torch.as_tensor(bboxes),
-            "cls": torch.as_tensor(labels),
-            "img_size": torch.as_tensor([new_h, new_w]),
-            "img_scale": torch.tensor([1.0]),
+            "bboxes": bboxes,
+            "labels": labels,
+            "img_size": (new_h, new_w),
+            "img_scale": [1.0],
         }
 
         return img, target, img_id
+    
     def __len__(self):
         return len(self.img_ids)
     

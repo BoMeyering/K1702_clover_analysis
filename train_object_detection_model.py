@@ -14,73 +14,51 @@ from src.datasets import ObjDetDataset
 from src.transforms import get_train_obj_transforms, get_val_obj_transforms
 from src.trainer import ObjTrainer
 from src.utils.loggers import setup_loggers
+from src.utils.collate_functions import custom_collate
 from pathlib import Path
 
 model_config = {
-    "architecture": "EfficientDet",  # or your detection model architecture
-    "backbone_name": "efficientdet_d0",
+    "image_size": (512, 512),
+    "architecture": "efficientdet_d0",
     "pretrained": True,
-    "num_classes": 3   # including background class
+    "num_classes": 3,   # including background class
+    "max_det_per_image": 50
 }
 
 EPOCHS = 10
 CHECKPOINT_DIR = 'checkpoints/object_detection_models'
-IMG_RESIZE = (1024, 1024)
-MODEL_RUN_NAME = "_".join([model_config['architecture'], model_config['backbone_name'], str(IMG_RESIZE[0])])
+MODEL_RUN_NAME = "_".join([model_config['architecture'], str(model_config['image_size'][0])])
 
+# Instantiate model with config dict
+model = create_effdet_model(**model_config)
 
-def custom_collate(batch):
-    images, targets, image_ids = tuple(zip(*batch))
-    images = torch.stack(images)
-    images = images.float()
-
-    boxes = [target["bboxes"].float() for target in targets]
-    labels = [target["cls"].float() for target in targets]
-    img_size = [target["img_size"].float() for target in targets]
-    img_scale = [target["img_scale"].float() for target in targets]
-
-    annotations = {
-        "bbox": boxes,
-        "cls": labels,
-        "img_size": img_size,
-        "img_scale": img_scale,
-    }
-
-    return images, annotations, image_ids
-
-model = create_effdet_model(image_size=IMG_RESIZE)
-
+# Set computational device
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
 # Optimizer
 optimizer = SGD(params=model.parameters(), lr=0.005, momentum=0.9, weight_decay=0.0005)
-# logging.info(f"Set optimizer {type(optimizer)}")
+logging.info(f"Set optimizer {type(optimizer)}")
 
 # LR Scheduler
 scheduler = ExponentialLR(optimizer=optimizer, gamma=0.99)
-# logging.info(f"Set scheduler {type(scheduler)}")
+logging.info(f"Set scheduler {type(scheduler)}")
 
 def main():
-    # logging.info(f"Set scheduler {type(scheduler)}")
+    logging.info(f"Set scheduler {type(scheduler)}")
 
-    train_ds = ObjDetDataset(
-        transforms=get_train_obj_transforms,
-        img_resize = IMG_RESIZE, 
+    # Instantiate the data augmentations
+    train_transforms = get_train_obj_transforms(resize=model_config['image_size'])
+    val_transforms = get_val_obj_transforms(resize=model_config['image_size'])
     
-    )
-
-    val_ds = ObjDetDataset(
-        transforms=get_val_obj_transforms,
-        img_resize = IMG_RESIZE,
-        split='val',
-    )
+    # Instantiate Datasets
+    train_ds = ObjDetDataset(transforms=train_transforms)
+    val_ds = ObjDetDataset(transforms=val_transforms, split='val')
 
     # Create Dataloaders
     train_dl = DataLoader(
         train_ds,
         batch_size=2,
         shuffle=True,
-        num_workers=2,
         collate_fn=custom_collate  
     )
 
@@ -88,7 +66,6 @@ def main():
         val_ds,
         batch_size=2,
         shuffle=False,
-        num_workers=2,
         collate_fn=custom_collate 
     )
 
@@ -104,18 +81,9 @@ def main():
         checkpoint_dir=CHECKPOINT_DIR
     )
 
-    # logging.info(f"Created object detection trainer class {type(objdet_trainer)}")
+    logging.info(f"Created object detection trainer class {type(objdet_trainer)}")
 
     objdet_trainer.train()
-
-    # Example inference on validation set (optional)
-    # model.eval()
-    # for idx in range(len(val_ds)):
-    #     img, target, img_id = val_ds[idx]
-    #     with torch.no_grad():
-    #         prediction = model([img.to(device)])
-    #     print(f"Prediction for {img_id}: {prediction}")
-    #     # Save or process predictions as needed
 
 if __name__ == '__main__':
     main()
