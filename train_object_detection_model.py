@@ -22,29 +22,37 @@ model_config = {
     "architecture": "efficientdet_d0",
     "pretrained": True,
     "num_classes": 3,   # including background class
-    "max_det_per_image": 50
+    "max_det_per_image": 20
 }
 
 EPOCHS = 10
 CHECKPOINT_DIR = 'checkpoints/object_detection_models'
 MODEL_RUN_NAME = "_".join([model_config['architecture'], str(model_config['image_size'][0])])
 
+setup_loggers(model_run=MODEL_RUN_NAME, log_dir='logs', log_level='INFO')
+
+logger = logging.getLogger()
+
 # Instantiate model with config dict
 model = create_effdet_model(**model_config)
+logger.info(f"Instantiated object detection model {type(model)}.")
+
 
 # Set computational device
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+logger.info(f"Set computational device: {device}")
+
 
 # Optimizer
 optimizer = SGD(params=model.parameters(), lr=0.005, momentum=0.9, weight_decay=0.0005)
-logging.info(f"Set optimizer {type(optimizer)}")
+logger.info(f"Set optimizer {type(optimizer)}")
+
 
 # LR Scheduler
 scheduler = ExponentialLR(optimizer=optimizer, gamma=0.99)
-logging.info(f"Set scheduler {type(scheduler)}")
+logger.info(f"Set scheduler {type(scheduler)}")
 
 def main():
-    logging.info(f"Set scheduler {type(scheduler)}")
 
     # Instantiate the data augmentations
     train_transforms = get_train_obj_transforms(resize=model_config['image_size'])
@@ -81,7 +89,7 @@ def main():
         checkpoint_dir=CHECKPOINT_DIR
     )
 
-    logging.info(f"Created object detection trainer class {type(objdet_trainer)}")
+    logger.info(f"Created model trainer class {type(objdet_trainer)}")
 
     objdet_trainer.train()
 
