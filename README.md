@@ -33,11 +33,7 @@ In contrast, here is an example of a plant with several small, dense clustered c
 Finally, this accession exhibits uniformly sparse canopy, with most of the leaves growing at the margins of the plant.
 ![Accession Ta00696: A plant exhibiting sparse growth](assets/Ta00696.jpg)
 
-### Image Mask Generation
 
-### Quadrat Corner Detection
-
-### Semantic Segmentation Model
 
 
 
@@ -117,48 +113,33 @@ Family-wise density estimates.
 Breeding Value Computation
 Breeding values are computed for each accession based on shape/density metrics, enabling selection based on compactness, vigor, or spread.
 
-# Example Images 🖼️ 
+## Example Images 🖼️ 
 Dense, Small Canopy
 Accession Ta00070
-
 
 Rhizomatous Growth
 Accession Ta00079
 
-
 Sparse, Margin Growth
 Accession Ta00696
 
-
-
-
 # Feature Outputs 📊 
-From the warped masks, we compute:
+* From the warped masks, we compute:
+* Total clover area
+* Convex hull area
+* Solidity (area / convex hull area)
+* Number of clumps / components
+* Average component size
+* Edge distance metrics
+* These metrics are used to evaluate morphological traits relevant to clover breeding (e.g., canopy density, spread, compactness).
 
-Total clover area
-
-Convex hull area
-
-Solidity (area / convex hull area)
-
-Number of clumps / components
-
-Average component size
-
-Edge distance metrics
-
-These metrics are used to evaluate morphological traits relevant to clover breeding (e.g., canopy density, spread, compactness).
-
-# Downstream Applications 📈
+## Downstream Applications 📈
 Ranking accessions by morphological traits
-
 Identifying breeding targets for canopy architecture
-
 Estimating family-wise genetic effects (e.g., BLUPs)
-
 Automating phenotyping pipelines for breeding trials
 
-# Directory Structure 📁
+## Directory Structure 📁
 ```
 data/
 ├── processed/
@@ -198,7 +179,7 @@ train_object_detection_model.py
 train_segmentation_model.py
 ```
 
-# Tools & Technologies 🛠️ 
+## Tools & Technologies 🛠️ 
 * [Labelbox](https://labelbox.com/): Image annotation
 * [PyTorch](https://pytorch.org/): Model training
 * [Albumentations](https://albumentations.ai/): Image augmentation
@@ -207,14 +188,14 @@ train_segmentation_model.py
 * [SciPy](https://scipy.org/): Connected components and shape analysis
 * [Segment Anything (SAM)](https://segment-anything.com/): Prompt-based segmentation
 
-# References 🔗 
+## References 🔗 
 * *Kirillov et al.* (2023). **Segment Anything** [DOI:10.48550/arXiv.2304.02643](https://doi.org/10.48550/arXiv.2304.02643)
 * *Tan et al.* (2019). **EfficientDet: Scalable and Efficient Object Detection** [DOI:10.48550/arXiv.1911.09070](https://doi.org/10.48550/arXiv.1911.09070)
 * *Chen et al.* (2017). **Rethinking Atrous Convolution for Semantic Image Segmentation** [DOI:10.48550/arXiv.1706.05587](https://doi.org/10.48550/arXiv.1706.05587)
 * *Chen et al.* (2018). **Encoder-Decoder with Atrous Separable Convolution for Semantic Image Segmentation** [DOI:10.48550/arXiv.1802.02611](https://doi.org/10.48550/arXiv.1802.02611)
 * *Xie et al.* (2021). **SegFormer: Simple and Efficient Design for Semantic Segmentation with Transformers** [DOI:10.48550/arXiv.2105.15203](https://doi.org/10.48550/arXiv.2105.15203)
 
-# Acknowledgments 🤝
+## Acknowledgments 🤝
 This work is part of our Kura clover breeding efforts at [The Land Institute](landinstitute.org). Many thanks to the field and lab teams who assisted in image collection and annotation.
 
 
