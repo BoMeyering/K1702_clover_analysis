@@ -27,7 +27,7 @@ class SegmentationDataset(Dataset):
         self.data_dir = Path(data_dir)
         self.img_dir = self.data_dir / 'processed' / 'images'
         self.target_dir = self.data_dir / 'processed' / 'targets'
-        self.transforms = transforms(resize=img_resize)
+        self.transforms = transforms
 
         # Grab img ids
         self.img_ids = pl.read_csv(self.data_dir / 'data_split.csv')\

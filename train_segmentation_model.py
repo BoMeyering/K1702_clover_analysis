@@ -35,43 +35,39 @@ CHECKPOINT_DIR = 'checkpoints/segmentation_models'
 IMG_RESIZE = (1024, 1024)
 MODEL_RUN_NAME = "_".join([model_config['architecture'], model_config['encoder_name'], str(IMG_RESIZE[0])])
 
-# setup_loggers(model_run=MODEL_RUN_NAME, log_dir='logs', log_level='INFO')
+setup_loggers(model_run=MODEL_RUN_NAME, log_dir='logs', log_level='INFO')
 
-# logger = logging.getLogger()
+logger = logging.getLogger()
 
 def main():
     # Set device
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    # logger.info(f"Set computational device: {device}")
+    logger.info(f"Set computational device: {device}")
 
     # Create model
     model = create_smp_model(config=model_config)
     model = model.to(device)
-    # logger.info(f"Instantiated segmentation model {type(model)} and sent to computational device {device}.")
+    logger.info(f"Instantiated segmentation model {type(model)} and sent to computational device {device}.")
 
     # Optimizer
     optimizer = SGD(params=model.parameters(),momentum=0.9, nesterov=True)
-    # logger.info(f"Set optimizer {type(optimizer)}")
+    logger.info(f"Set optimizer {type(optimizer)}")
 
     # LR Scheduler
     scheduler = ExponentialLR(optimizer=optimizer, gamma=0.99)
-    # logger.info(f"Set scheduler {type(scheduler)}")
+    logger.info(f"Set scheduler {type(scheduler)}")
 
     # Set loss function
     criterion = CrossEntropyLoss()
-    # logger.info(f"Set loss criterion {type(criterion)}")
+    logger.info(f"Set loss criterion {type(criterion)}")
+
+    # Set model augmentations
+    train_transforms = get_train_seg_transforms(resize=IMG_RESIZE)
+    val_transforms = get_val_seg_transforms(resize=IMG_RESIZE)
 
     # Create datasets
-    train_ds = SegmentationDataset(
-        transforms=get_train_seg_transforms,
-        img_resize=IMG_RESIZE
-    )    
-
-    val_ds = SegmentationDataset(
-        transforms=get_val_seg_transforms,
-        split='val',
-        img_resize=IMG_RESIZE
-    )
+    train_ds = SegmentationDataset(transforms=train_transforms)    
+    val_ds = SegmentationDataset(transforms=val_transforms, split='val')
 
     # Create Dataloaders
     train_dl = DataLoader(
@@ -101,27 +97,27 @@ def main():
         checkpoint_dir=CHECKPOINT_DIR
     )
 
-    # logger.info(f"Created model trainer class {type(seg_trainer)}")
+    logger.info(f"Created model trainer class {type(seg_trainer)}")
 
-    # seg_trainer.train()
-    model.eval()
+    seg_trainer.train()
+    # model.eval()
 
-    state_dict = torch.load('checkpoints/segmentation_models/Segformer_mit_b1_1024_epoch_10_vloss-0.032614.pth', map_location=device)['model_state_dict']
-    model.load_state_dict(state_dict)
+    # state_dict = torch.load('checkpoints/segmentation_models/Segformer_mit_b1_1024_epoch_10_vloss-0.032614.pth', map_location=device)['model_state_dict']
+    # model.load_state_dict(state_dict)
 
-    for index in range(len(val_ds)):
-        img, target, img_id = val_ds[index]
-        print(img.shape, target.shape, img_id)
+    # for index in range(len(val_ds)):
+    #     img, target, img_id = val_ds[index]
+    #     print(img.shape, target.shape, img_id)
 
-        img = img.unsqueeze(0)
-        logits = model(img)
+    #     img = img.unsqueeze(0)
+    #     logits = model(img)
 
-        # upsampled_logits = F.interpolate(output['logits'], size=(512, 512), mode="bilinear", align_corners=False)
-        preds = argmax(logits, dim=1).squeeze(0).cpu().numpy()
+    #     # upsampled_logits = F.interpolate(output['logits'], size=(512, 512), mode="bilinear", align_corners=False)
+    #     preds = argmax(logits, dim=1).squeeze(0).cpu().numpy()
 
-        print(preds.shape)
+    #     print(preds.shape)
 
-        cv2.imwrite(Path('outputs/segmentation') / (img_id + "_preds.png"), preds*50)
+    #     cv2.imwrite(Path('outputs/segmentation') / (img_id + "_preds.png"), preds*50)
 
 if __name__ == '__main__':
     main()
