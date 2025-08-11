@@ -150,7 +150,7 @@ if __name__ == '__main__':
         preds = torch.randn(10, 5, 20, 20)
         targets = torch.randint(num_classes, (10, 20, 20))
         # targets = torch.argmax(preds.softmax(dim=1), dim=1)
-        preds_indices = torch.argmax(preds, dim=1)  # shape (10, 20, 20)
+        preds_indices = torch.argmax(preds, dim=1)  # shape (10, 20, 20) # very important because we want to make sure we send the correct format definetly do this before the call to function
 
 
         metrics.update(preds=preds_indices, targets=targets, verbose=False)
