@@ -255,6 +255,9 @@ class ObjTrainer(BaseTrainer):
         p_bar.close()
 
     def _train_step(self, batch):
+        """ Train one batch step """
+
+        # Unpack the batch
         imgs, targets, img_id = batch
         imgs = imgs.to(self.device)
         targets = move_to_device(targets, self.device)
