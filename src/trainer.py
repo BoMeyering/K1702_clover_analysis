@@ -11,7 +11,8 @@ from tqdm import tqdm
 from src.eval import AverageMeter, AverageMeterSet
 from src.callbacks import ModelCheckpoint
 from abc import ABC, abstractmethod
-
+from src.metrics import ObjectDetectionMetricLogger
+from src.metrics import SegmentationMetricLogger
 
 class BaseTrainer(ABC):
     def __init__(
@@ -81,6 +82,7 @@ class SegTrainer(BaseTrainer):
     def __init__(self, *args, criterion, **kwargs):
         super().__init__(*args, **kwargs)
         self.criterion = criterion
+        self.seg_metrics = SegmentationMetricLogger(num_classes= 3 , device=self.device)
 
     def _train_epoch(self, epoch):
         """ Train one epoch """
@@ -146,6 +148,8 @@ class SegTrainer(BaseTrainer):
     def _val_epoch(self, epoch):
         """ Validate one epoch """
 
+        self.seg_metrics.reset()
+
         # Put model in evaluation mode
         self.model.eval()
 
@@ -175,7 +179,30 @@ class SegTrainer(BaseTrainer):
             )
             p_bar.update()
         p_bar.close()
-    
+        
+        #logging avg_metrics
+        avg_metrics, mc_metrics = self.seg_metrics.compute()
+        self.logger.info(
+            f"[Val] F1 Score (avg): {avg_metrics.get('f1_score', torch.tensor(0.)).item():.4f}, "
+            f"Jaccard Index (avg): {avg_metrics.get('jaccard_index', torch.tensor(0.)).item():.4f}, "
+            f"Mean IoU (avg): {avg_metrics.get('mIOU', torch.tensor(0.)).item():.4f}"
+        )
+
+        # Now log multiclass metrics - converting tensors to list because we cannot log tensors we need it to look reasonable
+        mc_f1 = mc_metrics.get('f1_score', torch.tensor([])).tolist()
+        mc_jaccard = mc_metrics.get('jaccard_index', torch.tensor([])).tolist()
+        mc_miou = mc_metrics.get('mIOU', torch.tensor([])).tolist()
+
+        self.logger.info(
+            f"[Val] F1 Score (per-class): {', '.join(f'{v:.4f}' for v in mc_f1)}"
+        )
+        self.logger.info(
+            f"[Val] Jaccard Index (per-class): {', '.join(f'{v:.4f}' for v in mc_jaccard)}"
+        )
+        self.logger.info(
+            f"[Val] Mean IoU (per-class): {', '.join(f'{v:.4f}' for v in mc_miou)}"
+        )
+
     @torch.no_grad()
     def _val_step(self, batch):
         """ Validate one batch """
@@ -189,41 +216,40 @@ class SegTrainer(BaseTrainer):
         logits = self.model(imgs)
 
         # upsampled_logits = F.interpolate(output['logits'], size=(512, 512), mode="bilinear", align_corners=False)
-
         val_loss = self.criterion(logits, targets.long())
+
+        # Get predicted class IDs to give to the metrics function
+        preds = torch.argmax(logits, dim=1)  
+
+        # Update metrics (pls work)
+        self.seg_metrics.update(preds, targets)     # there is something to do with bool i have not used but I have no idea what it does need to look up
 
         return val_loss
     
 
 class ObjTrainer(BaseTrainer):
-    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.obj_metrics = ObjectDetectionMetricLogger(device=self.device)
+
     def _train_epoch(self, epoch):
-        """ Train one epoch """
         self.model.train()
         self.meters.reset()
-
         self.logger.info(f"Training epoch {epoch}")
         p_bar = tqdm(range(len(self.train_loader)))
         iter_loader = iter(self.train_loader)
 
         for batch_idx in range(len(self.train_loader)):
             self.model.zero_grad()
-
             batch = next(iter_loader)
             train_loss = self._train_step(batch)
             train_loss.backward()
-            self.meters.update('train_loss', train_loss.item())
             self.optimizer.step()
+            self.meters.update('train_loss', train_loss.item())
 
             p_bar.set_description(
-                "Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Train Loss: {loss:.6f}".format(
-                    epoch=epoch,
-                    epochs=self.epochs,
-                    batch=batch_idx + 1,
-                    iter=len(self.train_loader),
-                    lr=self.scheduler.get_last_lr()[0],
-                    loss=train_loss.item()
-                )
+                f"Train Epoch: {epoch}/{self.epochs:4}. Iter: {batch_idx + 1}/{len(self.train_loader):4}. "
+                f"LR: {self.scheduler.get_last_lr()[0]:.6f}. Train Loss: {train_loss.item():.6f}"
             )
             p_bar.update()
         p_bar.close()
@@ -235,52 +261,50 @@ class ObjTrainer(BaseTrainer):
         imgs, targets, img_id = batch
         imgs = imgs.to(self.device)
         targets = move_to_device(targets, self.device)
-
         loss_dict = self.model(imgs, targets)
-        loss = loss_dict["loss"]
-        self.optimizer.step()
-
-        return loss
+        return loss_dict["loss"]
 
     @torch.no_grad()
     def _val_epoch(self, epoch):
-        """ Validate one epoch """
+        self.obj_metrics.reset()
+
         self.model.eval()
         self.logger.info(f"Validating epoch {epoch}")
+
         p_bar = tqdm(range(len(self.val_loader)))
         iter_loader = iter(self.val_loader)
 
         for batch_idx in range(len(self.val_loader)):
             batch = next(iter_loader)
-            print(batch)
             val_loss = self._val_step(batch)
             self.meters.update('val_loss', val_loss.item())
 
             p_bar.set_description(
-                "Val Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Val Loss: {loss:.6f}".format(
-                    epoch=epoch,
-                    epochs=self.epochs,
-                    batch=batch_idx + 1,
-                    iter=len(self.val_loader),
-                    lr=self.scheduler.get_last_lr()[0],
-                    loss=val_loss.item()
-                )
+                f"Val Epoch: {epoch}/{self.epochs:4}. Iter: {batch_idx + 1}/{len(self.val_loader):4}. "
+                f"LR: {self.scheduler.get_last_lr()[0]:.6f}. Val Loss: {val_loss.item():.6f}"
             )
             p_bar.update()
         p_bar.close()
 
+        metrics = self.obj_metrics.compute()
+        self.logger.info(
+            f"[Val] mAP@50: {metrics.get('mAP/map_50', torch.tensor(0.)).item():.4f}, "
+            f"mAP@75: {metrics.get('mAP/map_75', torch.tensor(0.)).item():.4f}, "
+            f"IoU: {metrics.get('IoU', {}).get('iou', torch.tensor(0.)).item():.4f}"
+        )
+
     @torch.no_grad()
     def _val_step(self, batch):
-        """ Validate one batch step """
-        # Unpack the batch and move to device
-        imgs, targets, img_ids = batch
+        imgs, targets, _ = batch
         imgs = imgs.to(self.device)
         targets = move_to_device(targets, self.device)
 
+        # Get loss for logging
         loss_dict = self.model(imgs, targets)
         loss = loss_dict["loss"]
+        
+        self.obj_metrics.update(loss_dict, targets)
         return loss
-    
 
 
 def move_to_device(obj, device):
