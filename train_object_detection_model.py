@@ -19,7 +19,7 @@ from pathlib import Path
 
 model_config = {
     "image_size": (512, 512),
-    "architecture": "efficientdet_d0",
+    "architecture": "tf_efficientdet_d4",
     "pretrained": True,
     "num_classes": 3,   # including background class
     "max_det_per_image": 20
@@ -33,14 +33,15 @@ setup_loggers(model_run=MODEL_RUN_NAME, log_dir='logs', log_level='INFO')
 
 logger = logging.getLogger()
 
-# Instantiate model with config dict
-model = create_effdet_model(**model_config)
-logger.info(f"Instantiated object detection model {type(model)}.")
-
-
 # Set computational device
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 logger.info(f"Set computational device: {device}")
+
+
+# Instantiate model with config dict
+model = create_effdet_model(**model_config)
+model = model.to(device)
+logger.info(f"Instantiated object detection model {type(model)} and moved to {device}.")
 
 
 # Optimizer
@@ -65,14 +66,14 @@ def main():
     # Create Dataloaders
     train_dl = DataLoader(
         train_ds,
-        batch_size=2,
+        batch_size=4,
         shuffle=True,
         collate_fn=custom_collate  
     )
 
     val_dl = DataLoader(
         val_ds,
-        batch_size=2,
+        batch_size=4,
         shuffle=False,
         collate_fn=custom_collate 
     )

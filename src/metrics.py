@@ -106,6 +106,10 @@ class SegmentationMetricLogger:
         }
     
     def update(self, preds: torch.tensor, targets: torch.tensor, verbose: bool=False):
+        # Ensure preds and targets are long tensors (class indices)
+        preds = preds.long()
+        targets = targets.long()
+
         # update avg metrics
         for key, metric in self.avg_metrics.items():
             self.batch_results['avg'][key] = metric(preds, targets)
