@@ -1,0 +1,38 @@
+enable_segmentation: true
+enable_detection: true
+
+image_paths:
+  - data/processed/images/Ta00070_20170703.jpg
+  - data/processed/images/Ta00079_20170703.jpg
+  - data/processed/images/Ta00058_20170703.jpg
+  - data/processed/images/Ta00696_20170703.jpg
+
+output_dir: outputs/inference
+
+color_map:
+  - [20, 66, 112]      # Class 0
+  - [255, 255, 255]    # Class 1
+  - [100, 200, 0]      # Class 2
+
+bbox_color_map:
+  clover: [0, 239, 255]
+  quadrat: [67, 179, 255]
+  quadrat_corner: [255, 100, 0]
+
+segmentation:
+  model_config:
+    architecture: Segformer           
+    encoder_name: mit_b1
+    encoder_depth: 5
+    encoder_weights: imagenet    # can be None if using checkpoint weights for the future
+    input_channels: 3
+    classes: 3
+  checkpoint: checkpoints/segmentation_models/Segformer_mit_b1_1024_epoch_6_vloss-0.034729.pth
+
+detection:
+  image_size: [512, 512]
+  architecture: efficientdet_d0
+  num_classes: 3
+  max_det_per_image: 20
+  checkpoint: checkpoints/object_detection_models/efficientdet_d0_512_epoch_8_vloss-0.489794.pth
+

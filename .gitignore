@@ -165,8 +165,7 @@ data/raw/images/*.jpg
 data/raw/mat_files/*.mat
 
 outputs/**/*.png
-
-
+outputs/**/*.jpg
 
 **.pth
 **.pt
