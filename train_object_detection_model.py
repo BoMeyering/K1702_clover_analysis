@@ -18,10 +18,10 @@ from src.utils.collate_functions import custom_collate
 from pathlib import Path
 
 model_config = {
-    "image_size": (512, 512),
+    "image_size": (1024, 1024),
     "architecture": "tf_efficientdet_d4",
     "pretrained": True,
-    "num_classes": 3,   # including background class
+    "num_classes": 3,   # excluding background class
     "max_det_per_image": 20
 }
 

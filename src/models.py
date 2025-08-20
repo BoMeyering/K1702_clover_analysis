@@ -15,21 +15,36 @@ from effdet.efficientdet import HeadNet
 
 
 
-def create_effdet_model(num_classes: int=3, image_size: tuple=(1024, 1024), architecture: str='efficientdet_d0', max_det_per_image: int=50, pretrained: bool=True):
+from effdet import get_efficientdet_config, EfficientDet, DetBenchTrain, DetBenchPredict
+from effdet.efficientdet import HeadNet
+
+def create_effdet_model(num_classes: int = 3,
+                        image_size: tuple = (1024, 1024),
+                        architecture: str = 'efficientdet_d0',
+                        max_det_per_image: int = 50,
+                        pretrained: bool = True,
+                        mode: str = "train"):
+
     config = get_efficientdet_config(architecture)
+    config.update({
+        'num_classes': num_classes,
+        'image_size': image_size,
+        'max_det_per_image': max_det_per_image
+    })
 
-    config.update({'num_classes': num_classes})
-    config.update({'image_size': image_size})
-    config.update({'max_det_per_image': max_det_per_image})
+    if mode == "train":
+        net = EfficientDet(config, pretrained_backbone=pretrained)
+        net.class_net = HeadNet(config=config, num_outputs=config.num_classes)
+        return DetBenchTrain(net, config)
 
-    net = EfficientDet(config, pretrained_backbone=pretrained)
+    elif mode == "predict":
+        config.soft_nms = False  # or True, depending on your needs
+        net = EfficientDet(config, pretrained_backbone=pretrained)
+        net.class_net = HeadNet(config=config, num_outputs=config.num_classes)
+        return DetBenchPredict(net)
 
-    net.class_net = HeadNet(
-        config=config,
-        num_outputs=config.num_classes
-    )
-
-    return DetBenchTrain(net, config)
+    else:
+        raise ValueError("mode must be either 'train' or 'predict'")
 
 
 def create_smp_model(config: dict) -> torch.nn.Module:
