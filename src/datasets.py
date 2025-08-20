@@ -109,6 +109,7 @@ class ObjDetDataset(Dataset):
         # Construct the image path and read in the image in RGB
         img_path = str(self.img_dir / (img_id + '.jpg'))
         img = cv2.imread(img_path, cv2.IMREAD_COLOR_RGB)
+        #show the images here
 
         # Grab the bboxes for the img_id
         bboxes = self.bboxes.filter(pl.col('img_id')==img_id)\
@@ -130,7 +131,7 @@ class ObjDetDataset(Dataset):
 
         # Grab the transformed images, bounding boxes and labels
         img = augmented['image']
-        bboxes = augmented['bboxes']
+        bboxes = augmented['bboxes'][:[1,0,3,2]]
         labels = [int(x) for x in augmented['labels']]
 
         _, new_h, new_w = img.shape
