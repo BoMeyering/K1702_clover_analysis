@@ -123,6 +123,19 @@ def collate_fn(batch):
 
     return imgs, annotations, targets, img_ids
 
+
+def move_to_device(obj, device):
+    """ Recursive function to move targets to device """
+    if torch.is_tensor(obj):
+        return obj.to(device)
+    elif isinstance(obj, list):
+        return [move_to_device(o, device) for o in obj]
+    elif isinstance(obj, dict):
+        return {k: move_to_device(v, device) for k, v in obj.items()}
+    else:
+        return obj
+
+
 class KuraDataset(Dataset):
     def __init__(self, annotations, transforms, split: str=DATA_SPLIT):
         self.annotations = annotations
@@ -201,6 +214,10 @@ def main():
     pbar = tqdm(enumerate(train_loader), total=len(train_loader), dynamic_ncols=True)
     for batch_idx, batch in pbar:
         imgs, annotations, _, img_ids = batch
+
+        imgs = imgs.to(device)
+        annotations = move_to_device(annotations, device)
+
         optimizer.zero_grad()
         out = model(imgs, annotations)
         loss = out['loss']
