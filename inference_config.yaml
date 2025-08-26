@@ -1,4 +1,4 @@
-enable_segmentation: false
+enable_segmentation: true
 enable_detection: true
 
 image_paths:
@@ -31,8 +31,7 @@ segmentation:
 
 detection:
   image_size: [1024, 1024]
-  architecture: efficientdet_d0
-  num_classes: 3
+  architecture: fasterrcnn_resnet50_fpn
+  num_classes: 2
   max_det_per_image: 20
-  checkpoint: checkpoints/object_detection_models/efficientdet_d0_1024_epoch_10_vloss-0.524967.pth
-
+  checkpoint: checkpoints/object_detection_models/fasterrcnn_resnet50_fpn_1024_epoch_1_vloss-0.184183.pth

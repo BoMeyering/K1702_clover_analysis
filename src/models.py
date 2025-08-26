@@ -5,46 +5,30 @@ BoMeyering 2025
 """
 
 import torch
+import torchvision
 import inspect
 import segmentation_models_pytorch as smp
 from transformers import SegformerForSemanticSegmentation
-from effdet import DetBenchTrain
-from effdet import EfficientDet
-from effdet import get_efficientdet_config
-from effdet.efficientdet import HeadNet
+from torchvision.models.detection import fasterrcnn_resnet50_fpn
+from torchvision.models.detection import FasterRCNN
+from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 
 
+def create_fasterrcnn_model(architecture, pretrained, num_classes, max_det_per_image, **kwargs):
+    if architecture == "fasterrcnn_resnet50_fpn":
+        model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=pretrained)
 
-from effdet import get_efficientdet_config, EfficientDet, DetBenchTrain, DetBenchPredict
-from effdet.efficientdet import HeadNet
+        # Replace head
+        in_features = model.roi_heads.box_predictor.cls_score.in_features
+        model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
 
-def create_effdet_model(num_classes: int = 3,
-                        image_size: tuple = (1024, 1024),
-                        architecture: str = 'efficientdet_d0',
-                        max_det_per_image: int = 50,
-                        pretrained: bool = True,
-                        mode: str = "train"):
+        # Limit max detections per image
+        model.roi_heads.detections_per_img = max_det_per_image
 
-    config = get_efficientdet_config(architecture)
-    config.update({
-        'num_classes': num_classes,
-        'image_size': image_size,
-        'max_det_per_image': max_det_per_image
-    })
-
-    if mode == "train":
-        net = EfficientDet(config, pretrained_backbone=pretrained)
-        net.class_net = HeadNet(config=config, num_outputs=config.num_classes)
-        return DetBenchTrain(net, config)
-
-    elif mode == "predict":
-        config.soft_nms = False  # or True, depending on your needs
-        net = EfficientDet(config, pretrained_backbone=pretrained)
-        net.class_net = HeadNet(config=config, num_outputs=config.num_classes)
-        return DetBenchPredict(net)
-
+        return model
     else:
-        raise ValueError("mode must be either 'train' or 'predict'")
+        raise ValueError(f"Unsupported architecture: {architecture}")
+
 
 
 def create_smp_model(config: dict) -> torch.nn.Module:
@@ -76,4 +60,3 @@ def create_smp_model(config: dict) -> torch.nn.Module:
         return model
     except AttributeError as e:
         raise ValueError(f"Model architecture {config['architecture']} is not a valid SMP architecture.\nSelect one from 'smp._MODEL_ARCHITECTURES'")
-

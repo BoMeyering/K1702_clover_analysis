@@ -9,7 +9,7 @@ import logging
 from torch.utils.data import DataLoader
 from torch.optim import SGD
 from torch.optim.lr_scheduler import ExponentialLR
-from src.models import create_effdet_model
+from src.models import create_fasterrcnn_model
 from src.datasets import ObjDetDataset
 from src.transforms import get_train_obj_transforms, get_val_obj_transforms
 from src.trainer import ObjTrainer
@@ -18,11 +18,11 @@ from src.utils.collate_functions import custom_collate
 from pathlib import Path
 
 model_config = {
-    "image_size": (1024, 1024),
-    "architecture": "tf_efficientdet_d4",
+    "architecture": "fasterrcnn_resnet50_fpn",
     "pretrained": True,
-    "num_classes": 3,   # excluding background class
-    "max_det_per_image": 20
+    "num_classes": 2,   # 1 class + background
+    "max_det_per_image": 20,
+    "image_size": (1024, 1024)  # handled in transforms, not the model
 }
 
 EPOCHS = 10
@@ -39,7 +39,7 @@ logger.info(f"Set computational device: {device}")
 
 
 # Instantiate model with config dict
-model = create_effdet_model(**model_config)
+model = create_fasterrcnn_model(**model_config)
 model = model.to(device)
 logger.info(f"Instantiated object detection model {type(model)} and moved to {device}.")
 

@@ -24,38 +24,34 @@ class ObjectDetectionMetricLogger:
             'IoU': IntersectionOverUnion(iou_threshold=iou_threshold, box_format=box_format).to(device)
         }
 
-    def update(self, loss_dict, targets):
+    def update(self, outputs, targets):
         """
-        Processes raw model outputs and updates metrics.
+        Processes Faster R-CNN outputs and updates metrics.
 
         Args:
-            loss_dict (Dict): Output from the model containing 'detections'.
+            outputs (List[Dict]): List of detections from Faster R-CNN, 
+                                each dict has 'boxes', 'scores', 'labels'.
             targets (Dict): Raw targets containing 'bbox' and 'cls'.
         """
-        # pull the detections key from loss dict and pull the targets accurately while updating
-        detections = loss_dict['detections'].detach().cpu()
-        preds_boxes = detections[..., 0:4]
-        preds_scores = detections[..., 4]
-        preds_labels = detections[..., 5].to(torch.int64)
-
         preds = []
-        for i in range(detections.shape[0]):
+        for det in outputs:  # already a list of dicts
             preds.append({
-                "boxes": preds_boxes[i],
-                "scores": preds_scores[i],
-                "labels": preds_labels[i]
+                "boxes": det["boxes"].detach().cpu(),
+                "scores": det["scores"].detach().cpu(),
+                "labels": det["labels"].detach().cpu()
             })
 
         targets_gt = []
         for i in range(len(targets['bbox'])):
-            target_dict = {
+            targets_gt.append({
                 "boxes": targets['bbox'][i].detach().cpu(),
                 "labels": targets['cls'][i].detach().cpu().to(torch.int64)
-            }
-            targets_gt.append(target_dict)
+            })
 
+        # Update metrics
         self.metrics['mAP'].update(preds, targets_gt)
         self.metrics['IoU'].update(preds, targets_gt)
+
 
     def compute(self):
         map_metrics = self.metrics['mAP'].compute()
