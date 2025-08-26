@@ -215,14 +215,13 @@ class SegTrainer(BaseTrainer):
         # Forward pass through model and compute loss
         logits = self.model(imgs)
 
-        # upsampled_logits = F.interpolate(output['logits'], size=(512, 512), mode="bilinear", align_corners=False)
         val_loss = self.criterion(logits, targets.long())
 
         # Get predicted class IDs to give to the metrics function
         preds = torch.argmax(logits, dim=1)  
 
         # Update metrics (pls work)
-        self.seg_metrics.update(preds, targets)     # there is something to do with bool i have not used but I have no idea what it does need to look up
+        self.seg_metrics.update(preds, targets)
 
         return val_loss
     
@@ -234,7 +233,7 @@ class ObjTrainer(BaseTrainer):
 
     def _train_epoch(self, epoch):
         self.model.train()
-        self.meters.reset()
+        self.meters.reset()  # Reset all meters at the start of the epoch
         self.logger.info(f"Training epoch {epoch}")
         p_bar = tqdm(range(len(self.train_loader)))
         iter_loader = iter(self.train_loader)
@@ -255,20 +254,24 @@ class ObjTrainer(BaseTrainer):
         p_bar.close()
 
     def _train_step(self, batch):
-        """ Train one batch step """
+        imgs, targets, img_ids = batch
+        imgs = [img.to(self.device) for img in imgs]
+        targets = [{k: v.to(self.device) for k, v in t.items()} for t in targets]
 
-        # Unpack the batch
-        imgs, targets, img_id = batch
-        imgs = imgs.to(self.device)
-        targets = move_to_device(targets, self.device)
         loss_dict = self.model(imgs, targets)
-        return loss_dict["loss"]
+        loss = sum(loss for loss in loss_dict.values())
+        return loss
 
     @torch.no_grad()
     def _val_epoch(self, epoch):
-        self.obj_metrics.reset()
-
         self.model.eval()
+
+        # Ensure 'val_loss' exists in meters
+        if 'val_loss' not in self.meters.meters:
+            self.meters.meters['val_loss'] = AverageMeter()
+        else:
+            self.meters['val_loss'].reset()
+
         self.logger.info(f"Validating epoch {epoch}")
 
         p_bar = tqdm(range(len(self.val_loader)))
@@ -277,35 +280,43 @@ class ObjTrainer(BaseTrainer):
         for batch_idx in range(len(self.val_loader)):
             batch = next(iter_loader)
             val_loss = self._val_step(batch)
-            self.meters.update('val_loss', val_loss.item())
+
+            # Update AverageMeterSet
+            self.meters.update('val_loss', val_loss)
 
             p_bar.set_description(
                 f"Val Epoch: {epoch}/{self.epochs:4}. Iter: {batch_idx + 1}/{len(self.val_loader):4}. "
-                f"LR: {self.scheduler.get_last_lr()[0]:.6f}. Val Loss: {val_loss.item():.6f}"
+                f"LR: {self.scheduler.get_last_lr()[0]:.6f}. Val Loss: {val_loss:.6f}"
             )
             p_bar.update()
         p_bar.close()
 
-        metrics = self.obj_metrics.compute()
-        self.logger.info(
-            f"[Val] mAP@50: {metrics.get('mAP/map_50', torch.tensor(0.)).item():.4f}, "
-            f"mAP@75: {metrics.get('mAP/map_75', torch.tensor(0.)).item():.4f}, "
-            f"IoU: {metrics.get('IoU', {}).get('iou', torch.tensor(0.)).item():.4f}"
-        )
+        self.logger.info(f"Epoch {epoch}: Avg Validation Loss: {self.meters['val_loss'].avg:.6f}")
+        return self.meters['val_loss'].avg
 
     @torch.no_grad()
     def _val_step(self, batch):
-        imgs, targets, _ = batch
-        imgs = imgs.to(self.device)
-        targets = move_to_device(targets, self.device)
+        self.model.eval()
+        images, targets, _ = batch
+        images = [img.to(self.device) for img in images]
+        targets = [{k: v.to(self.device) for k, v in t.items()} for t in targets]
 
-        # Get loss for logging
-        loss_dict = self.model(imgs, targets)
-        loss = loss_dict["loss"]
-        
-        self.obj_metrics.update(loss_dict, targets)
-        return loss
+        # Get predictions in eval mode
+        _ = self.model(images, targets)
 
+        # Temporarily switch to train mode to calculate losses
+        self.model.train()
+        loss_dict = self.model(images, targets)
+        self.model.eval()
+
+        #backpropagate losses in a way that it uses the sum of the returned value
+        # Sum all losses into a scalar
+        if isinstance(loss_dict, dict):
+            loss = sum(loss for loss in loss_dict.values())
+        else:
+            loss = torch.tensor(loss_dict, device=self.device)
+
+        return loss.item()
 
 def move_to_device(obj, device):
     """ Recursive function to move targets to device """

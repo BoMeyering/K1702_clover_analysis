@@ -98,29 +98,22 @@ class ObjDetDataset(Dataset):
         with open('metadata/obj_det_class_map.json', 'r') as f:
             self.mapping = json.load(f)
 
-    def __getitem__(
-            self, 
-            index: int
-        ):
-        
+    def __getitem__(self, index: int):
         # Grab the img_id
         img_id = self.img_ids[index]
 
         # Construct the image path and read in the image in RGB
         img_path = str(self.img_dir / (img_id + '.jpg'))
         img = cv2.imread(img_path, cv2.IMREAD_COLOR_RGB)
-        #show the images here
 
-        # Grab the bboxes for the img_id
-        bboxes = self.bboxes.filter(pl.col('img_id')==img_id)\
-            .select(['x1', 'y1', 'x2', 'y2'])\
-            .to_numpy()
-        
-        # Grab the class labels and map to integers
-        labels = self.bboxes.filter(pl.col('img_id')==img_id)\
-            .select('class')['class']\
-            .to_list()
-        labels = list(map(lambda x: self.mapping.get(x), labels))
+        # Filter bboxes + labels for this img_id and keep only quadrat_corner
+        bboxes_df = self.bboxes.filter(
+            (pl.col('img_id') == img_id) & (pl.col('class') == 'quadrat_corner')
+        )
+
+        # Extract boxes and labels
+        bboxes = bboxes_df.select(['x1', 'y1', 'x2', 'y2']).to_numpy()
+        labels = [self.mapping['quadrat_corner']] * len(bboxes)
 
         # Perform augmentations
         augmented = self.transforms(
@@ -131,21 +124,22 @@ class ObjDetDataset(Dataset):
 
         # Grab the transformed images, bounding boxes and labels
         img = augmented['image']
-        bboxes = augmented['bboxes'][:[1,0,3,2]]
+        bboxes = augmented['bboxes']
         labels = [int(x) for x in augmented['labels']]
 
+
         _, new_h, new_w = img.shape
-        bboxes = torch.as_tensor(bboxes ,dtype = torch.float32)
-        labels = torch.as_tensor(labels)
-        
+        bboxes = torch.as_tensor(bboxes, dtype=torch.float32)
+        labels = torch.as_tensor(labels, dtype=torch.int64)
+        img = torch.as_tensor(img, dtype=torch.float32)
+
         target = {
-            "bboxes": bboxes,
+            "boxes": bboxes,
             "labels": labels,
-            "img_size": (new_h, new_w),
-            "img_scale": [1.0],
         }
 
         return img, target, img_id
+
     
     def __len__(self):
         return len(self.img_ids)
