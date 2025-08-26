@@ -34,4 +34,4 @@ detection:
   architecture: fasterrcnn_resnet50_fpn
   num_classes: 2
   max_det_per_image: 20
-  checkpoint: checkpoints/object_detection_models/fasterrcnn_resnet50_fpn_1024_epoch_1_vloss-0.184183.pth
+  checkpoint: checkpoints/object_detection_models/fasterrcnn_resnet50_fpn_1024_epoch_4_vloss-0.587874.pth
