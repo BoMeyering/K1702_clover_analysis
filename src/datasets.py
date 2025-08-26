@@ -123,7 +123,7 @@ class ObjDetDataset(Dataset):
         )
 
         # Grab the transformed images, bounding boxes and labels
-        img = augmented['image']
+        img = augmented['image'].float()
         bboxes = augmented['bboxes']
         labels = [int(x) for x in augmented['labels']]
 
