@@ -234,7 +234,7 @@ class ObjTrainer(BaseTrainer):
 
     def _train_epoch(self, epoch):
         self.model.train()
-        self.meters.reset()  # Reset all meters at the start of the epoch
+        self.meters.reset()
         if self.is_master:
             self.logger.info(f"Training epoch {epoch}")
             p_bar = tqdm(range(len(self.train_loader)))
@@ -242,7 +242,6 @@ class ObjTrainer(BaseTrainer):
             p_bar = range(len(self.train_loader))
 
         iter_loader = iter(self.train_loader)
-
         for batch_idx in range(len(self.train_loader)):
             self.model.zero_grad()
             batch = next(iter_loader)
@@ -272,8 +271,8 @@ class ObjTrainer(BaseTrainer):
     @torch.no_grad()
     def _val_epoch(self, epoch):
         self.model.eval()
+        self.obj_metrics.reset()   # 🔥 reset detection metrics
 
-        # Ensure 'val_loss' exists in meters
         if 'val_loss' not in self.meters.meters:
             self.meters.meters['val_loss'] = AverageMeter()
         else:
@@ -286,12 +285,10 @@ class ObjTrainer(BaseTrainer):
             p_bar = range(len(self.val_loader))
 
         iter_loader = iter(self.val_loader)
-
         for batch_idx in range(len(self.val_loader)):
             batch = next(iter_loader)
             val_loss = self._val_step(batch)
 
-            # Update AverageMeterSet
             self.meters.update('val_loss', val_loss)
 
             if self.is_master:
@@ -304,6 +301,13 @@ class ObjTrainer(BaseTrainer):
             p_bar.close()
             self.logger.info(f"Epoch {epoch}: Avg Validation Loss: {self.meters['val_loss'].avg:.6f}")
 
+            # 🔥 Compute detection metrics
+            metrics = self.obj_metrics.compute()
+            for k, v in metrics.items():
+                if torch.is_tensor(v):
+                    v = v.item()
+                self.logger.info(f"[Val] {k}: {v:.4f}")
+
         return self.meters['val_loss'].avg
 
     @torch.no_grad()
@@ -313,8 +317,11 @@ class ObjTrainer(BaseTrainer):
         images = [img.to(self.device) for img in images]
         targets = [{k: v.to(self.device) for k, v in t.items()} for t in targets]
 
-        # Get predictions in eval mode
-        _ = self.model(images, targets)
+        # Get predictions (for metrics)
+        outputs = self.model(images)
+
+        # Update detection metrics 🔥
+        self.obj_metrics.update(outputs, targets)
 
         # Temporarily switch to train mode to calculate losses
         self.model.train()
@@ -327,6 +334,7 @@ class ObjTrainer(BaseTrainer):
             loss = torch.tensor(loss_dict, device=self.device)
 
         return loss.item()
+
 
 
 def move_to_device(obj, device):
