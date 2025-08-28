@@ -33,7 +33,7 @@ class ObjectDetectionMetricLogger:
         """
         Args:
             outputs: list of dicts from Faster R-CNN ('boxes', 'scores', 'labels')
-            targets: list of dicts with keys 'bbox', 'cls'
+            targets: list of dicts with keys 'boxes', 'labels'
         """
         preds = []
         targets_gt = []
@@ -45,14 +45,15 @@ class ObjectDetectionMetricLogger:
                 "labels": det["labels"].detach().cpu()
             })
 
-        for i in range(len(targets['bbox'])):
+        for tgt in targets:
             targets_gt.append({
-                "boxes": targets['bbox'][i].detach().cpu(),
-                "labels": targets['cls'][i].detach().cpu().to(torch.int64)
+                "boxes": tgt["boxes"].detach().cpu(),
+                "labels": tgt["labels"].detach().cpu().to(torch.int64)
             })
 
         self.metrics['mAP'].update(preds, targets_gt)
         self.metrics['IoU'].update(preds, targets_gt)
+
 
     def compute(self):
         map_metrics = self.metrics['mAP'].compute()
