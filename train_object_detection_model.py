@@ -6,6 +6,9 @@ BoMeyering 2025
 
 import torch
 import logging
+import torch
+import torch.nn as nn
+from torch.utils.data import Dataset, DataLoader
 from torch.utils.data import DataLoader
 from torch.optim import SGD
 from torch.optim.lr_scheduler import ExponentialLR
@@ -30,17 +33,20 @@ CHECKPOINT_DIR = 'checkpoints/object_detection_models'
 MODEL_RUN_NAME = "_".join([model_config['architecture'], str(model_config['image_size'][0])])
 
 setup_loggers(model_run=MODEL_RUN_NAME, log_dir='logs', log_level='INFO')
-
 logger = logging.getLogger()
 
 # Set computational device
-device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 logger.info(f"Set computational device: {device}")
 
 
 # Instantiate model with config dict
 model = create_fasterrcnn_model(**model_config)
-model = model.to(device)
+#Parallel processing if more than one GPU's
+if torch.cuda.device_count() > 1 :
+    model = nn.DataParallel(model)
+    logger.info(f"The model is being loaded into {torch.cuda.device_count()} available GPU's for parallel processing.")
+model.to(device)
 logger.info(f"Instantiated object detection model {type(model)} and moved to {device}.")
 
 
