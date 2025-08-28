@@ -39,7 +39,7 @@ def get_train_obj_transforms(resize: tuple[int, int]):
     transforms = A.Compose(
         [
             A.Resize(resize[0], resize[1], p=1.0),
-            A.Normalize(normalization='min_max'),
+            A.Normalize(),
             A.HorizontalFlip(p=0.5),
             A.RandomBrightnessContrast(0.2),
             A.Rotate(limit=25),

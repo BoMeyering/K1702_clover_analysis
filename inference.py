@@ -190,7 +190,7 @@ def process_image(image_path, seg_model, det_model, seg_transforms, obj_transfor
             orig_img,
             obj_transforms=obj_transforms,
             device=device,
-            score_thresh=getattr(config.detection, "score_thresh", 0.0),
+            score_thresh=getattr(config.detection, "score_thresh", 0.7),
             label_map={1: "quadrat_corner"}  # update with your class labels
         )
 
