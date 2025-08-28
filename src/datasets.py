@@ -131,7 +131,6 @@ class ObjDetDataset(Dataset):
         _, new_h, new_w = img.shape
         bboxes = torch.as_tensor(bboxes, dtype=torch.float32)
         labels = torch.as_tensor(labels, dtype=torch.int64)
-        img = torch.as_tensor(img, dtype=torch.float32)
 
         target = {
             "boxes": bboxes,
