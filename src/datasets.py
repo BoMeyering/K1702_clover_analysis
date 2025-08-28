@@ -12,12 +12,7 @@ from albumentations import Compose
 from pathlib import Path
 from torch.utils.data import Dataset, DataLoader, DistributedSampler
 from typing import Union, Tuple, Optional
-from src.transforms import (
-    get_train_obj_transforms,
-    get_train_seg_transforms,
-    get_val_obj_transforms,
-    get_val_seg_transforms
-)
+import src.transforms
 from src.utils.collate_functions import custom_collate
 
 
