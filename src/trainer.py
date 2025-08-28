@@ -227,15 +227,20 @@ class SegTrainer(BaseTrainer):
     
 
 class ObjTrainer(BaseTrainer):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, is_master=True, **kwargs):
         super().__init__(*args, **kwargs)
         self.obj_metrics = ObjectDetectionMetricLogger(device=self.device)
+        self.is_master = is_master  # only rank 0 logs/saves
 
     def _train_epoch(self, epoch):
         self.model.train()
         self.meters.reset()  # Reset all meters at the start of the epoch
-        self.logger.info(f"Training epoch {epoch}")
-        p_bar = tqdm(range(len(self.train_loader)))
+        if self.is_master:
+            self.logger.info(f"Training epoch {epoch}")
+            p_bar = tqdm(range(len(self.train_loader)))
+        else:
+            p_bar = range(len(self.train_loader))
+
         iter_loader = iter(self.train_loader)
 
         for batch_idx in range(len(self.train_loader)):
@@ -246,12 +251,14 @@ class ObjTrainer(BaseTrainer):
             self.optimizer.step()
             self.meters.update('train_loss', train_loss.item())
 
-            p_bar.set_description(
-                f"Train Epoch: {epoch}/{self.epochs:4}. Iter: {batch_idx + 1}/{len(self.train_loader):4}. "
-                f"LR: {self.scheduler.get_last_lr()[0]:.6f}. Train Loss: {train_loss.item():.6f}"
-            )
-            p_bar.update()
-        p_bar.close()
+            if self.is_master:
+                p_bar.set_description(
+                    f"Train Epoch: {epoch}/{self.epochs:4}. Iter: {batch_idx + 1}/{len(self.train_loader):4}. "
+                    f"LR: {self.scheduler.get_last_lr()[0]:.6f}. Train Loss: {train_loss.item():.6f}"
+                )
+                p_bar.update()
+        if self.is_master:
+            p_bar.close()
 
     def _train_step(self, batch):
         imgs, targets, img_ids = batch
@@ -272,9 +279,12 @@ class ObjTrainer(BaseTrainer):
         else:
             self.meters['val_loss'].reset()
 
-        self.logger.info(f"Validating epoch {epoch}")
+        if self.is_master:
+            self.logger.info(f"Validating epoch {epoch}")
+            p_bar = tqdm(range(len(self.val_loader)))
+        else:
+            p_bar = range(len(self.val_loader))
 
-        p_bar = tqdm(range(len(self.val_loader)))
         iter_loader = iter(self.val_loader)
 
         for batch_idx in range(len(self.val_loader)):
@@ -284,14 +294,16 @@ class ObjTrainer(BaseTrainer):
             # Update AverageMeterSet
             self.meters.update('val_loss', val_loss)
 
-            p_bar.set_description(
-                f"Val Epoch: {epoch}/{self.epochs:4}. Iter: {batch_idx + 1}/{len(self.val_loader):4}. "
-                f"LR: {self.scheduler.get_last_lr()[0]:.6f}. Val Loss: {val_loss:.6f}"
-            )
-            p_bar.update()
-        p_bar.close()
+            if self.is_master:
+                p_bar.set_description(
+                    f"Val Epoch: {epoch}/{self.epochs:4}. Iter: {batch_idx + 1}/{len(self.val_loader):4}. "
+                    f"LR: {self.scheduler.get_last_lr()[0]:.6f}. Val Loss: {val_loss:.6f}"
+                )
+                p_bar.update()
+        if self.is_master:
+            p_bar.close()
+            self.logger.info(f"Epoch {epoch}: Avg Validation Loss: {self.meters['val_loss'].avg:.6f}")
 
-        self.logger.info(f"Epoch {epoch}: Avg Validation Loss: {self.meters['val_loss'].avg:.6f}")
         return self.meters['val_loss'].avg
 
     @torch.no_grad()
@@ -309,14 +321,13 @@ class ObjTrainer(BaseTrainer):
         loss_dict = self.model(images, targets)
         self.model.eval()
 
-        #backpropagate losses in a way that it uses the sum of the returned value
-        # Sum all losses into a scalar
         if isinstance(loss_dict, dict):
             loss = sum(loss for loss in loss_dict.values())
         else:
             loss = torch.tensor(loss_dict, device=self.device)
 
         return loss.item()
+
 
 def move_to_device(obj, device):
     """ Recursive function to move targets to device """
