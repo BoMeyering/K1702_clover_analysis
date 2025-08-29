@@ -269,7 +269,6 @@ class ObjTrainer(BaseTrainer):
         return loss
 
     @torch.no_grad()
-        @torch.no_grad()
     def _val_epoch(self, epoch):
         self.model.eval()
         self.obj_metrics.reset()
