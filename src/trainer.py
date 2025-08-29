@@ -269,9 +269,10 @@ class ObjTrainer(BaseTrainer):
         return loss
 
     @torch.no_grad()
+        @torch.no_grad()
     def _val_epoch(self, epoch):
         self.model.eval()
-        self.obj_metrics.reset()   # 🔥 reset detection metrics
+        self.obj_metrics.reset()
 
         if 'val_loss' not in self.meters.meters:
             self.meters.meters['val_loss'] = AverageMeter()
@@ -288,7 +289,6 @@ class ObjTrainer(BaseTrainer):
         for batch_idx in range(len(self.val_loader)):
             batch = next(iter_loader)
             val_loss = self._val_step(batch)
-
             self.meters.update('val_loss', val_loss)
 
             if self.is_master:
@@ -301,14 +301,22 @@ class ObjTrainer(BaseTrainer):
             p_bar.close()
             self.logger.info(f"Epoch {epoch}: Avg Validation Loss: {self.meters['val_loss'].avg:.6f}")
 
-            # 🔥 Compute detection metrics
-            metrics = self.obj_metrics.compute()
+        if torch.distributed.is_initialized():
+            torch.distributed.barrier()
+
+        metrics = self.obj_metrics.compute()
+
+        if self.is_master:
             for k, v in metrics.items():
                 if torch.is_tensor(v):
                     v = v.item()
                 self.logger.info(f"[Val] {k}: {v:.4f}")
 
+        if torch.distributed.is_initialized():
+            torch.distributed.barrier()
+
         return self.meters['val_loss'].avg
+
 
     @torch.no_grad()
     def _val_step(self, batch):
