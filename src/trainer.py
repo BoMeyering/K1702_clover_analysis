@@ -324,13 +324,16 @@ class ObjTrainer(BaseTrainer):
         images = [img.to(self.device) for img in images]
         targets = [{k: v.to(self.device) for k, v in t.items()} for t in targets]
 
-        # Get predictions (for metrics)
+        # Forward pass for predictions
         outputs = self.model(images)
 
-        # Update detection metrics 🔥
+        # Move outputs to device if needed (some models may produce CPU tensors)
+        outputs = [{k: v.to(self.device) for k, v in out.items()} for out in outputs]
+
+        # Update detection metrics
         self.obj_metrics.update(outputs, targets)
 
-        # Temporarily switch to train mode to calculate losses
+        # Compute loss (model needs train mode)
         self.model.train()
         loss_dict = self.model(images, targets)
         self.model.eval()
