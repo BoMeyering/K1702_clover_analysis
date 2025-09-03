@@ -25,8 +25,8 @@ class ObjectDetectionMetricLogger:
     def __init__(self, iou_threshold=0.5, box_format='xyxy', device='cpu'):
         self.device = device
         self.metrics = {
-            "mAP": MeanAveragePrecision(iou_type="bbox").to(device).to(self.device),
-            "IoU": IntersectionOverUnion(iou_threshold=iou_threshold, box_format=box_format).to(device).to(self.device),
+            "mAP": MeanAveragePrecision(iou_type="bbox").to(device),
+            "IoU": IntersectionOverUnion(iou_threshold=iou_threshold, box_format=box_format).to(device),
         }
 
     def update(self, outputs, targets):
@@ -40,15 +40,15 @@ class ObjectDetectionMetricLogger:
 
         for det in outputs:
             preds.append({
-                "boxes": det["boxes"].detach().cpu(),
-                "scores": det["scores"].detach().cpu(),
-                "labels": det["labels"].detach().cpu()
+                "boxes": det["boxes"].detach(),
+                "scores": det["scores"].detach(),
+                "labels": det["labels"].detach()
             })
 
         for tgt in targets:
             targets_gt.append({
-                "boxes": tgt["boxes"].detach().cpu(),
-                "labels": tgt["labels"].detach().cpu().to(torch.int64)
+                "boxes": tgt["boxes"].detach(),
+                "labels": tgt["labels"].detach().to(torch.int64)
             })
 
         self.metrics["mAP"].update(preds, targets_gt)
