@@ -25,8 +25,8 @@ class ObjectDetectionMetricLogger:
     def __init__(self, iou_threshold=0.5, box_format='xyxy', device='cpu'):
         self.device = device
         self.metrics = {
-            "mAP": MeanAveragePrecision(iou_type="bbox").to(device),
-            "IoU": IntersectionOverUnion(iou_threshold=iou_threshold, box_format=box_format).to(device),
+            "mAP": MeanAveragePrecision(iou_type="bbox").to(device).to(rank),
+            "IoU": IntersectionOverUnion(iou_threshold=iou_threshold, box_format=box_format).to(device).to(rank),
         }
 
     def update(self, outputs, targets):
