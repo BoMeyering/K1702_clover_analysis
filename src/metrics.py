@@ -25,8 +25,8 @@ class ObjectDetectionMetricLogger:
     def __init__(self, iou_threshold=0.5, box_format='xyxy', device='cpu'):
         self.device = device
         self.metrics = {
-            'mAP': MeanAveragePrecision(iou_type='bbox').to(device),
-            'IoU': IntersectionOverUnion(iou_threshold=iou_threshold, box_format=box_format).to(device)
+            "mAP": MeanAveragePrecision(iou_type="bbox").to(device),
+            "IoU": IntersectionOverUnion(iou_threshold=iou_threshold, box_format=box_format).to(device),
         }
 
     def update(self, outputs, targets):
@@ -51,20 +51,22 @@ class ObjectDetectionMetricLogger:
                 "labels": tgt["labels"].detach().cpu().to(torch.int64)
             })
 
-        self.metrics['mAP'].update(preds, targets_gt)
-        self.metrics['IoU'].update(preds, targets_gt)
-
+        self.metrics["mAP"].update(preds, targets_gt)
+        self.metrics["IoU"].update(preds, targets_gt)
 
     def compute(self):
-        map_metrics = self.metrics['mAP'].compute()
-        iou_metric = self.metrics['IoU'].compute()
-        flat_map_metrics = {f"mAP/{k}": reduce_tensor(v) for k, v in map_metrics.items()}  # reduce across GPUs
+        map_metrics = self.metrics["mAP"].compute()
+        iou_metric = self.metrics["IoU"].compute()
+
+        # reduce across GPUs if distributed
+        flat_map_metrics = {f"mAP/{k}": reduce_tensor(v) for k, v in map_metrics.items()}
         iou_metric = reduce_tensor(iou_metric)
+
         return {**flat_map_metrics, "IoU": iou_metric}
 
     def reset(self):
-        self.metrics['mAP'].reset()
-        self.metrics['IoU'].reset()
+        for metric in self.metrics.values():
+            metric.reset()
 
 # Segmentation Metrics
 class SegmentationMetricLogger:
@@ -105,22 +107,39 @@ class SegmentationMetricLogger:
         for metric in self.mc_metrics.values():
             metric.reset()
 
-# Test / Example usage
-if __name__ == '__main__':
+# Test
+if __name__ == "__main__":
+    # ---- Segmentation Example ----
+    print("\n=== Segmentation Test ===")
     batches = 20
     num_classes = 5
-    metrics = SegmentationMetricLogger(num_classes=num_classes, device='cpu')
+    seg_metrics = SegmentationMetricLogger(num_classes=num_classes, device="cpu")
 
     for _ in range(batches):
-        # fake predictions: logits over classes
         preds = torch.randn(10, num_classes, 20, 20)
         targets = torch.randint(0, num_classes, (10, 20, 20))
-
-        # convert logits to class indices
         preds_indices = torch.argmax(preds, dim=1)
+        seg_metrics.update(preds=preds_indices, targets=targets)
 
-        metrics.update(preds=preds_indices, targets=targets)
-
-    avg, mc = metrics.compute()
+    avg, mc = seg_metrics.compute()
     print("Average Metrics:", avg)
     print("Per-Class Metrics:", mc)
+
+    # ---- Object Detection Example ----
+    print("\n=== Object Detection Test ===")
+    obj_metrics = ObjectDetectionMetricLogger(device="cpu")
+
+    for _ in range(5):
+        outputs = [{
+            "boxes": torch.tensor([[10, 10, 50, 50]], dtype=torch.float),
+            "scores": torch.tensor([0.9]),
+            "labels": torch.tensor([1])
+        }]
+        targets = [{
+            "boxes": torch.tensor([[12, 12, 48, 48]], dtype=torch.float),
+            "labels": torch.tensor([1])
+        }]
+        obj_metrics.update(outputs, targets)
+
+    result = obj_metrics.compute()
+    print("Detection Metrics:", result)
