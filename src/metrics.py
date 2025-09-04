@@ -15,10 +15,11 @@ def reduce_tensor(tensor, device):
     """Reduce tensor across all GPUs (NCCL backend)."""
     if not dist.is_initialized():
         return tensor
-    rt = tensor.detach().to(device)
+    rt = tensor.detach().to(device, dtype=torch.float32)  # ensure float (there was an issue that it did not like the typecast so be happy code)
     dist.all_reduce(rt, op=dist.ReduceOp.SUM)
     rt /= dist.get_world_size()
     return rt
+
 
 # Object Detection Metrics
 class ObjectDetectionMetricLogger:
