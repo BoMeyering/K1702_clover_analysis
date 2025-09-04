@@ -11,14 +11,19 @@ from torchmetrics.detection import IntersectionOverUnion, MeanAveragePrecision
 import torch.distributed as dist
 
 # Helper for DDP loss/metric reduction necessary for dhe reduction to work (input tensors define the device that wil run metric calculations)
-def reduce_tensor(tensor, device):
-    """Reduce tensor across all GPUs (NCCL backend)."""
+def reduce_tensor(value, device):
+    """Reduce tensor or leave dicts as-is across all GPUs."""
+    if isinstance(value, dict):  # recursive reduction for nested dicts
+        return {k: reduce_tensor(v, device) for k, v in value.items()}
+    if not torch.is_tensor(value):  
+        return value  # skip non-tensors
     if not dist.is_initialized():
-        return tensor
-    rt = tensor.detach().to(device, dtype=torch.float32)  # ensure float (there was an issue that it did not like the typecast so be happy code)
+        return value
+    rt = value.detach().to(device, dtype=torch.float32) # we need to typecast for code not to blow up(does not cimpute metrics with int)
     dist.all_reduce(rt, op=dist.ReduceOp.SUM)
     rt /= dist.get_world_size()
     return rt
+
 
 
 # Object Detection Metrics
