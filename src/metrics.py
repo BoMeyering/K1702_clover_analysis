@@ -10,23 +10,23 @@ from torchmetrics.segmentation import MeanIoU
 from torchmetrics.detection import IntersectionOverUnion, MeanAveragePrecision
 import torch.distributed as dist
 
-# Helper for DDP loss/metric reduction
-def reduce_tensor(tensor):
-    """ Reduce tensor across all GPUs """
-    if dist.is_initialized():
-        rt = tensor.clone()
-        dist.all_reduce(rt, op=dist.ReduceOp.SUM)
-        rt /= dist.get_world_size()
-        return rt
-    return tensor
+# Helper for DDP loss/metric reduction necessary for dhe reduction to work (input tensors define the device that wil run metric calculations)
+def reduce_tensor(tensor, device):
+    """Reduce tensor across all GPUs (NCCL backend)."""
+    if not dist.is_initialized():
+        return tensor
+    rt = tensor.detach().to(device)
+    dist.all_reduce(rt, op=dist.ReduceOp.SUM)
+    rt /= dist.get_world_size()
+    return rt
 
 # Object Detection Metrics
 class ObjectDetectionMetricLogger:
-    def __init__(self, iou_threshold=0.5, box_format='xyxy', device='cpu'):
+    def __init__(self, iou_threshold=0.5, box_format='xyxy', device='cuda:0'):
         self.device = device
         self.metrics = {
-            "mAP": MeanAveragePrecision(iou_type="bbox").to(device),
-            "IoU": IntersectionOverUnion(iou_threshold=iou_threshold, box_format=box_format).to(device),
+            "mAP": MeanAveragePrecision(iou_type="bbox").to(self.device),
+            "IoU": IntersectionOverUnion(iou_threshold=iou_threshold, box_format=box_format).to(self.device),
         }
 
     def update(self, outputs, targets):
@@ -40,15 +40,15 @@ class ObjectDetectionMetricLogger:
 
         for det in outputs:
             preds.append({
-                "boxes": det["boxes"].detach(),
-                "scores": det["scores"].detach(),
-                "labels": det["labels"].detach()
+                "boxes": det["boxes"].detach().to(self.device),
+                "scores": det["scores"].detach().to(self.device),
+                "labels": det["labels"].detach().to(self.device)
             })
 
         for tgt in targets:
             targets_gt.append({
-                "boxes": tgt["boxes"].detach(),
-                "labels": tgt["labels"].detach().to(torch.int64)
+                "boxes": tgt["boxes"].detach().to(self.device),
+                "labels": tgt["labels"].detach().to(torch.int64).to(self.device)
             })
 
         self.metrics["mAP"].update(preds, targets_gt)
@@ -59,8 +59,8 @@ class ObjectDetectionMetricLogger:
         iou_metric = self.metrics["IoU"].compute()
 
         # reduce across GPUs if distributed
-        flat_map_metrics = {f"mAP/{k}": reduce_tensor(v) for k, v in map_metrics.items()}
-        iou_metric = reduce_tensor(iou_metric)
+        flat_map_metrics = {f"mAP/{k}": reduce_tensor(v, self.device) for k, v in map_metrics.items()}
+        iou_metric = reduce_tensor(iou_metric, self.device)
 
         return {**flat_map_metrics, "IoU": iou_metric}
 
@@ -74,15 +74,15 @@ class SegmentationMetricLogger:
         self.device = device
         # average metrics
         self.avg_metrics = {
-            'f1_score': F1Score(num_classes=num_classes, task='multiclass').to(device),
-            'jaccard_index': JaccardIndex(num_classes=num_classes, task='multiclass').to(device),
-            'mIOU': MeanIoU(num_classes=num_classes, include_background=True, per_class=False, input_format='index').to(device)
+            'f1_score': F1Score(num_classes=num_classes, task='multiclass').to(self.device),
+            'jaccard_index': JaccardIndex(num_classes=num_classes, task='multiclass').to(self.device),
+            'mIOU': MeanIoU(num_classes=num_classes, include_background=True, per_class=False, input_format='index').to(self.device)
         }
         # per-class metrics
         self.mc_metrics = {
-            'f1_score': F1Score(num_classes=num_classes, task='multiclass', average='none').to(device),
-            'jaccard_index': JaccardIndex(num_classes=num_classes, task='multiclass', average='none').to(device),
-            'mIOU': MeanIoU(num_classes=num_classes, include_background=True, per_class=True, input_format='index').to(device)
+            'f1_score': F1Score(num_classes=num_classes, task='multiclass', average='none').to(self.device),
+            'jaccard_index': JaccardIndex(num_classes=num_classes, task='multiclass', average='none').to(self.device),
+            'mIOU': MeanIoU(num_classes=num_classes, include_background=True, per_class=True, input_format='index').to(self.device)
         }
 
     def update(self, preds: torch.Tensor, targets: torch.Tensor):
@@ -97,8 +97,8 @@ class SegmentationMetricLogger:
             metric.update(preds, targets)
 
     def compute(self):
-        avg_metrics = {k: reduce_tensor(metric.compute()) for k, metric in self.avg_metrics.items()}
-        mc_metrics = {k: reduce_tensor(metric.compute()) for k, metric in self.mc_metrics.items()}
+        avg_metrics = {k: reduce_tensor(metric.compute(), self.device) for k, metric in self.avg_metrics.items()}
+        mc_metrics = {k: reduce_tensor(metric.compute(), self.device) for k, metric in self.mc_metrics.items()}
         return avg_metrics, mc_metrics
 
     def reset(self):
@@ -113,11 +113,11 @@ if __name__ == "__main__":
     print("\n=== Segmentation Test ===")
     batches = 20
     num_classes = 5
-    seg_metrics = SegmentationMetricLogger(num_classes=num_classes, device="cpu")
+    seg_metrics = SegmentationMetricLogger(num_classes=num_classes, device="cuda:0")
 
     for _ in range(batches):
-        preds = torch.randn(10, num_classes, 20, 20)
-        targets = torch.randint(0, num_classes, (10, 20, 20))
+        preds = torch.randn(10, num_classes, 20, 20, device="cuda:0")
+        targets = torch.randint(0, num_classes, (10, 20, 20), device="cuda:0")
         preds_indices = torch.argmax(preds, dim=1)
         seg_metrics.update(preds=preds_indices, targets=targets)
 
@@ -127,17 +127,17 @@ if __name__ == "__main__":
 
     # ---- Object Detection Example ----
     print("\n=== Object Detection Test ===")
-    obj_metrics = ObjectDetectionMetricLogger(device="cpu")
+    obj_metrics = ObjectDetectionMetricLogger(device="cuda:0")
 
     for _ in range(5):
         outputs = [{
-            "boxes": torch.tensor([[10, 10, 50, 50]], dtype=torch.float),
-            "scores": torch.tensor([0.9]),
-            "labels": torch.tensor([1])
+            "boxes": torch.tensor([[10, 10, 50, 50]], dtype=torch.float, device="cuda:0"),
+            "scores": torch.tensor([0.9], device="cuda:0"),
+            "labels": torch.tensor([1], device="cuda:0")
         }]
         targets = [{
-            "boxes": torch.tensor([[12, 12, 48, 48]], dtype=torch.float),
-            "labels": torch.tensor([1])
+            "boxes": torch.tensor([[12, 12, 48, 48]], dtype=torch.float, device="cuda:0"),
+            "labels": torch.tensor([1], device="cuda:0")
         }]
         obj_metrics.update(outputs, targets)
 
