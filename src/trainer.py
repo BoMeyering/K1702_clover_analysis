@@ -232,6 +232,24 @@ class ObjTrainer(BaseTrainer):
         self.obj_metrics = ObjectDetectionMetricLogger(device=self.device)
         self.is_master = is_master  # only rank 0 logs/saves
 
+    def _log_metric(self, prefix: str, key: str, val):
+        import torch
+        if isinstance(val, dict):
+            for kk, vv in val.items():
+                self._log_metric(prefix, f"{key}/{kk}", vv)
+            return
+        if torch.is_tensor(val):
+            if val.numel() == 1:
+                self.logger.info(f"{prefix}{key}: {val.item():.4f}")
+            else:
+                # vector/tensor -> list
+                self.logger.info(f"{prefix}{key}: {val.detach().cpu().tolist()}")
+            return
+        if isinstance(val, (float, int)):
+            self.logger.info(f"{prefix}{key}: {val:.4f}")
+        else:
+            self.logger.info(f"{prefix}{key}: {val}")
+
     def _train_epoch(self, epoch):
         self.model.train()
         self.meters.reset()
@@ -307,9 +325,7 @@ class ObjTrainer(BaseTrainer):
 
         if self.is_master:
             for k, v in metrics.items():
-                if torch.is_tensor(v):
-                    v = v.item()
-                self.logger.info(f"[Val] {k}: {v:.4f}")
+                self._log_metric("[Val] ", k, v)
 
         if torch.distributed.is_initialized():
             torch.distributed.barrier()
