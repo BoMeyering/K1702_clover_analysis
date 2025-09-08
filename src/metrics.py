@@ -12,14 +12,18 @@ import torch.distributed as dist
 
 # Helper for DDP loss/metric reduction necessary for dhe reduction to work (input tensors define the device that wil run metric calculations)
 def reduce_tensor(value, device):
-    """Reduce tensor or leave dicts as-is across all GPUs."""
-    if isinstance(value, dict):  # recursive reduction for nested dicts
+    """Reduce tensor or dict of tensors across all GPUs, always return tensor(s)."""
+    if isinstance(value, dict):
         return {k: reduce_tensor(v, device) for k, v in value.items()}
-    if not torch.is_tensor(value):  
-        return value  # skip non-tensors
+
+    if not torch.is_tensor(value):
+        # Wrap floats/ints into tensors so downstream code (like monitor_op) works
+        value = torch.tensor(value, device=device, dtype=torch.float32)
+
     if not dist.is_initialized():
-        return value
-    rt = value.detach().to(device, dtype=torch.float32) # we need to typecast for code not to blow up(does not cimpute metrics with int)
+        return value.to(device)
+
+    rt = value.detach().to(device, dtype=torch.float32)
     dist.all_reduce(rt, op=dist.ReduceOp.SUM)
     rt /= dist.get_world_size()
     return rt

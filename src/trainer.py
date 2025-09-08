@@ -40,7 +40,6 @@ class BaseTrainer(ABC):
         self.checkpoint = ModelCheckpoint(checkpoint_dir=checkpoint_dir, model_run_name=model_run_name)
         self.meters = AverageMeterSet()
 
-        # ✅ Fix: define rank so it exists in all trainers
         if dist.is_available() and dist.is_initialized():
             self.rank = dist.get_rank()
         else:
