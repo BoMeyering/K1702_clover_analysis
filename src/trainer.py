@@ -40,6 +40,12 @@ class BaseTrainer(ABC):
         self.checkpoint = ModelCheckpoint(checkpoint_dir=checkpoint_dir, model_run_name=model_run_name)
         self.meters = AverageMeterSet()
 
+        # ✅ Fix: define rank so it exists in all trainers
+        if dist.is_available() and dist.is_initialized():
+            self.rank = dist.get_rank()
+        else:
+            self.rank = 0
+
     def train(self):
         """ Main train method """
         self.logger.info(f"Training model for {self.epochs} epochs.")
@@ -148,8 +154,6 @@ class SegTrainer(BaseTrainer):
         # Forward pass through the model and compute loss
         logits = self.model(imgs)
 
-        # upsampled_logits = F.interpolate(output['logits'], size=(512, 512), mode="bilinear", align_corners=False)
-
         train_loss = self.criterion(logits, targets.long())
 
         return train_loss
@@ -198,7 +202,6 @@ class SegTrainer(BaseTrainer):
             f"Mean IoU (avg): {avg_metrics.get('mIOU', torch.tensor(0.)).item():.4f}"
         )
 
-        # Now log multiclass metrics - converting tensors to list because we cannot log tensors we need it to look reasonable
         mc_f1 = mc_metrics.get('f1_score', torch.tensor([])).tolist()
         mc_jaccard = mc_metrics.get('jaccard_index', torch.tensor([])).tolist()
         mc_miou = mc_metrics.get('mIOU', torch.tensor([])).tolist()
@@ -227,10 +230,8 @@ class SegTrainer(BaseTrainer):
 
         val_loss = self.criterion(logits, targets.long())
 
-        # Get predicted class IDs to give to the metrics function
         preds = torch.argmax(logits, dim=1)  
 
-        # Update metrics (pls work)
         self.seg_metrics.update(preds, targets)
 
         return val_loss
@@ -252,7 +253,6 @@ class ObjTrainer(BaseTrainer):
             if val.numel() == 1:
                 self.logger.info(f"{prefix}{key}: {val.item():.4f}")
             else:
-                # vector/tensor -> list
                 self.logger.info(f"{prefix}{key}: {val.detach().cpu().tolist()}")
             return
         if isinstance(val, (float, int)):
@@ -350,16 +350,12 @@ class ObjTrainer(BaseTrainer):
         images = [img.to(self.device) for img in images]
         targets = [{k: v.to(self.device) for k, v in t.items()} for t in targets]
 
-        # Forward pass for predictions
         outputs = self.model(images)
 
-        # Move outputs to device if needed (some models may produce CPU tensors)
         outputs = [{k: v.to(self.device) for k, v in out.items()} for out in outputs]
 
-        # Update detection metrics
         self.obj_metrics.update(outputs, targets)
 
-        # Compute loss (model needs train mode)
         self.model.train()
         loss_dict = self.model(images, targets)
         self.model.eval()
