@@ -27,7 +27,7 @@ segmentation:
     encoder_weights: imagenet
     input_channels: 3
     classes: 3
-  checkpoint: checkpoints/segmentation_models/Segformer_mit_b1_1024_epoch_6_vloss-0.034729.pth
+  checkpoint: checkpoints/segmentation_models/Segformer_mit_b1_1024_epoch_9_vloss-0.027708.pth
 
 detection:
   image_size: [1024, 1024]

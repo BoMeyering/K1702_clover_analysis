@@ -3,10 +3,10 @@ import cv2
 import numpy as np
 import torch
 from omegaconf import OmegaConf
-from src.models import create_smp_model, create_fasterrcnn_model
-from src.transforms import get_val_seg_transforms, get_val_obj_transforms
 from collections import OrderedDict
 from torch import argmax
+from src.models import create_smp_model, create_fasterrcnn_model
+from src.transforms import get_val_seg_transforms, get_val_obj_transforms
 
 # ----------------- Main -----------------
 def main():
@@ -15,13 +15,13 @@ def main():
     color_map = np.array(config.color_map, dtype=np.uint8)
     bbox_color_map = {k: tuple(v) for k, v in config.bbox_color_map.items()}
 
-    # Transforms (use same val transforms as training)
+    # Transforms
     seg_transforms = get_val_seg_transforms(resize=(1024, 1024))
     det_cfg_input_size = tuple(config.detection.get("input_size", (1024, 1024)))
     obj_transforms = get_val_obj_transforms(resize=det_cfg_input_size)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    print(f"[info] Using device: {device}")
 
     seg_model, det_model = load_models(config, device)
 
@@ -37,6 +37,101 @@ def main():
             config,
             device
         )
+
+
+# ----------------- Model loading -----------------
+def load_models(config, device):
+    seg_model, det_model = None, None
+
+    # ----------------- Segmentation -----------------
+    if getattr(config, "enable_segmentation", False):
+        seg_model = create_smp_model(config=config.segmentation.model_config)
+        checkpoint = torch.load(config.segmentation.checkpoint, map_location=device)
+        state = checkpoint.get("model_state_dict", checkpoint)
+
+        # Strip "module." if present
+        new_state = OrderedDict()
+        for k, v in state.items():
+            nk = k.replace("module.", "")
+            new_state[nk] = v
+
+        seg_model.load_state_dict(new_state, strict=False)
+        seg_model.to(device).eval()
+        print("[info] Loaded segmentation model")
+
+    # ----------------- Detection -----------------
+    if getattr(config, "enable_detection", False):
+        det_cfg = {
+            "architecture": config.detection.get("architecture", "fasterrcnn_resnet50_fpn"),
+            "pretrained": config.detection.get("pretrained", True),
+            "num_classes": int(config.detection.get("num_classes", 2)),
+            "max_det_per_image": int(config.detection.get("max_det_per_image", 20)),
+            "image_size": tuple(config.detection.get("input_size", (1024, 1024)))
+        }
+
+        det_model = create_fasterrcnn_model(**det_cfg)
+        checkpoint = torch.load(config.detection.checkpoint, map_location=device)
+        state_dict = checkpoint.get("model_state_dict", checkpoint)
+
+        # Strip prefixes
+        new_state = OrderedDict()
+        for k, v in state_dict.items():
+            nk = k.replace("module.", "").replace("model.", "")
+            new_state[nk] = v
+
+        det_model.load_state_dict(new_state, strict=False)
+        det_model.to(device).eval()
+        print("[info] Loaded detection model (Faster R-CNN)")
+
+    return seg_model, det_model
+
+
+# ----------------- Segmentation inference -----------------
+def run_segmentation_inference(seg_model, img_tensor, device):
+    seg_model.eval()
+    with torch.no_grad():
+        x = img_tensor.unsqueeze(0).to(device)
+        logits = seg_model(x)
+        preds = argmax(logits, dim=1).squeeze(0).cpu().numpy().astype(np.uint8)
+    return preds
+
+
+# ----------------- Detection inference -----------------
+def run_detection_inference(model, orig_img, obj_transforms, device, score_thresh=0.0, label_map=None):
+    model.eval()
+    orig_h, orig_w = orig_img.shape[:2]
+
+    # Apply transforms
+    sample = obj_transforms(image=orig_img, bboxes=[], labels=[])
+    image_tensor = sample["image"].to(device)
+
+    # Resized image size
+    resized_h, resized_w = image_tensor.shape[1:]
+
+    with torch.no_grad():
+        outputs = model([image_tensor])[0]
+
+        boxes = outputs["boxes"].cpu().numpy()
+        scores = outputs["scores"].cpu().numpy()
+        labels = outputs["labels"].cpu().numpy()
+
+        scale_x = orig_w / resized_w
+        scale_y = orig_h / resized_h
+
+        boxes[:, [0, 2]] = boxes[:, [0, 2]] * scale_x
+        boxes[:, [1, 3]] = boxes[:, [1, 3]] * scale_y
+        boxes = boxes.astype(int)
+
+        if label_map is None:
+            label_map = {i: f"class_{i}" for i in range(1, model.num_classes)}
+
+        results = []
+        for (x1, y1, x2, y2), cid, sc in zip(boxes, labels, scores):
+            if sc >= score_thresh:
+                label_str = label_map.get(cid, f"class_{cid}")
+                results.append((label_str, int(x1), int(y1), int(x2), int(y2), float(sc)))
+
+    return results
 
 
 # ----------------- Drawing -----------------
@@ -74,99 +169,6 @@ def draw_bounding_boxes(image, bboxes, bbox_color_map, scale_factor=0.005, paddi
         cv2.putText(image, label, text_pos, cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness_text, cv2.LINE_AA)
 
     return image
-
-
-# ----------------- Model loading -----------------
-def load_models(config, device):
-    seg_model, det_model = None, None
-
-    if getattr(config, "enable_segmentation", False):
-        seg_model = create_smp_model(config=config.segmentation.model_config)
-        checkpoint = torch.load(config.segmentation.checkpoint, map_location=device)
-        state = checkpoint.get("model_state_dict", checkpoint)
-        seg_model.load_state_dict(state)
-        seg_model.to(device).eval()
-        print("[info] loaded segmentation model")
-
-    if getattr(config, "enable_detection", False):
-        det_cfg = {
-            "architecture": config.detection.get("architecture", "fasterrcnn_resnet50_fpn"),
-            "pretrained": config.detection.get("pretrained", True),
-            "num_classes": int(config.detection.get("num_classes", 2)),  # includes background
-            "max_det_per_image": int(config.detection.get("max_det_per_image", 20)),
-            "image_size": tuple(config.detection.get("input_size", (1024, 1024)))
-        }
-
-        det_model = create_fasterrcnn_model(**det_cfg)
-        checkpoint = torch.load(config.detection.checkpoint, map_location=device)
-        state_dict = checkpoint.get("model_state_dict", checkpoint)
-
-        # strip prefixes if trained with DataParallel
-        new_state = OrderedDict()
-        for k, v in state_dict.items():
-            nk = k.replace("module.", "").replace("model.", "")
-            new_state[nk] = v
-
-        det_model.load_state_dict(new_state, strict=False)
-        det_model.to(device).eval()
-        print("[info] loaded detection model (Faster R-CNN)")
-
-    return seg_model, det_model
-
-
-# ----------------- Segmentation inference -----------------
-def run_segmentation_inference(seg_model, img_tensor, device, original_size=None):
-    seg_model.eval()
-    with torch.no_grad():
-        x = img_tensor.unsqueeze(0).to(device)
-        logits = seg_model(x)
-        preds = argmax(logits, dim=1).squeeze(0).cpu().numpy().astype(np.uint8)
-    return preds
-
-
-# ----------------- Detection inference -----------------
-def run_detection_inference(model, orig_img, obj_transforms, device, score_thresh=0.0, label_map=None):
-    """
-    Run Faster R-CNN inference on a single image and rescale boxes back to original size.
-    """
-    model.eval()
-
-    orig_h, orig_w = orig_img.shape[:2]
-
-    # Apply transforms (resizing happens here)
-    sample = obj_transforms(image=orig_img, bboxes=[], labels=[])
-    image_tensor = sample["image"].to(device)
-
-    # Get resized image size after transform
-    resized_h, resized_w = image_tensor.shape[1:]  # C, H, W → take H, W
-
-    with torch.no_grad():
-        outputs = model([image_tensor])
-        outputs = outputs[0]
-
-        boxes = outputs["boxes"].cpu().numpy()
-        scores = outputs["scores"].cpu().numpy()
-        labels = outputs["labels"].cpu().numpy()
-
-        # Compute scaling factors
-        scale_x = orig_w / resized_w
-        scale_y = orig_h / resized_h
-
-        # Rescale boxes back to original image size
-        boxes[:, [0, 2]] = boxes[:, [0, 2]] * scale_x
-        boxes[:, [1, 3]] = boxes[:, [1, 3]] * scale_y
-        boxes = boxes.astype(int)
-
-        if label_map is None:
-            label_map = {i: f"class_{i}" for i in range(1, model.num_classes)}
-
-        results = []
-        for (x1, y1, x2, y2), cid, sc in zip(boxes, labels, scores):
-            if sc >= score_thresh:  # apply threshold here
-                label_str = label_map.get(cid, f"class_{cid}")
-                results.append((label_str, int(x1), int(y1), int(x2), int(y2), float(sc)))
-
-    return results
 
 
 # ----------------- Process image -----------------
@@ -207,7 +209,7 @@ def process_image(image_path, seg_model, det_model, seg_transforms, obj_transfor
     out_path = os.path.join(config.output_dir, os.path.basename(image_path))
     os.makedirs(config.output_dir, exist_ok=True)
     cv2.imwrite(out_path, combined)
-    print(f"Saved: {out_path}")
+    print(f"[info] Saved: {out_path}")
 
 
 if __name__ == "__main__":
