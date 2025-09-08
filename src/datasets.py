@@ -63,6 +63,8 @@ class SegmentationDataset(Dataset):
         num_replicas: Optional[int] = None,
         rank: Optional[int] = None,
         shuffle: bool = True,
+        num_workers: int = 0,           # added
+        pin_memory: bool = True         # added
     ) -> DataLoader:
         sampler = None
         if distributed:
@@ -73,6 +75,9 @@ class SegmentationDataset(Dataset):
             batch_size=batch_size,
             sampler=sampler,
             shuffle=shuffle if sampler is None else False,
+            num_workers=num_workers,         # pass to DataLoader
+            pin_memory=pin_memory,           # pass to DataLoader
+            persistent_workers=(num_workers > 0),
             collate_fn=lambda batch: tuple(zip(*batch))  # default seg batch collate
         )
 
