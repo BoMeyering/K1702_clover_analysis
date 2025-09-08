@@ -13,6 +13,8 @@ from src.callbacks import ModelCheckpoint
 from abc import ABC, abstractmethod
 from src.metrics import ObjectDetectionMetricLogger
 from src.metrics import SegmentationMetricLogger
+import torch.distributed as dist
+import torch
 
 class BaseTrainer(ABC):
     def __init__(
@@ -47,19 +49,27 @@ class BaseTrainer(ABC):
 
             logs = {
                 "epoch": epoch,
-                "train_loss": torch.tensor(self.meters['train_loss'].avg),
-                "val_loss": torch.tensor(self.meters['val_loss'].avg),
+                "train_loss": float(self.meters['train_loss'].avg),
+                "val_loss": float(self.meters['val_loss'].avg),
                 "model_state_dict": self.model.state_dict(),
             }
 
-            self.logger.info(f"Epoch {epoch} - Train Loss: {self.meters['train_loss'].avg:.6f}, Val Loss: {self.meters['val_loss'].avg:.6f}")
+            self.logger.info(
+                f"Epoch {epoch} - "
+                f"Train Loss: {self.meters['train_loss'].avg:.6f}, "
+                f"Val Loss: {self.meters['val_loss'].avg:.6f}"
+            )
 
-            self.checkpoint(epoch=epoch, logs=logs)
+            if dist.is_initialized():
+                dist.barrier()  # make sure all ranks finish validation first
+            if self.rank == 0:
+                self.checkpoint(epoch=epoch, logs=logs)
 
             if self.scheduler:
                 self.scheduler.step()
 
-        self.logger.info(f"Training complete")
+        self.logger.info("Training complete")
+
 
     @abstractmethod
     def _train_epoch(self, epoch):
