@@ -13,7 +13,8 @@ from pathlib import Path
 from torch.utils.data import Dataset, DataLoader, DistributedSampler
 from typing import Union, Tuple, Optional
 import src.transforms
-from src.utils.collate_functions import custom_collate
+from src.utils.collate_functions import custom_collate, seg_collate
+
 
 
 class SegmentationDataset(Dataset):
@@ -78,7 +79,7 @@ class SegmentationDataset(Dataset):
             num_workers=num_workers,         # pass to DataLoader
             pin_memory=pin_memory,           # pass to DataLoader
             persistent_workers=(num_workers > 0),
-            collate_fn=lambda batch: tuple(zip(*batch))  # default seg batch collate
+            collate_fn=seg_collate
         )
 
 
