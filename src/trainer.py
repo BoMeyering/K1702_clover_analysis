@@ -3,18 +3,18 @@ src.trainer.py
 Trainer Classes
 BoMeyering 2025
 """
+import os
 import logging
 import time
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
+from abc import ABC, abstractmethod
 from src.eval import AverageMeter, AverageMeterSet
 from src.callbacks import ModelCheckpoint
-from abc import ABC, abstractmethod
-from src.metrics import ObjectDetectionMetricLogger
-from src.metrics import SegmentationMetricLogger
+from src.metrics import ObjectDetectionMetricLogger, SegmentationMetricLogger
 import torch.distributed as dist
-import torch
+
 
 class BaseTrainer(ABC):
     def __init__(
@@ -40,15 +40,30 @@ class BaseTrainer(ABC):
         self.checkpoint = ModelCheckpoint(checkpoint_dir=checkpoint_dir, model_run_name=model_run_name)
         self.meters = AverageMeterSet()
 
+        # Distributed rank/world flags & master check
         if dist.is_available() and dist.is_initialized():
-            self.rank = dist.get_rank()
+            try:
+                self.rank = dist.get_rank()
+                self.world_size = dist.get_world_size()
+            except Exception:
+                self.rank = int(os.environ.get("RANK", 0))
+                self.world_size = int(os.environ.get("WORLD_SIZE", 1))
         else:
-            self.rank = 0
+            self.rank = int(os.environ.get("RANK", 0))
+            self.world_size = int(os.environ.get("WORLD_SIZE", 1))
+        self.is_master = (self.rank == 0)
 
     def train(self):
         """ Main train method """
         self.logger.info(f"Training model for {self.epochs} epochs.")
         for epoch in range(1, self.epochs + 1):
+            # If DistributedSampler is used, set epoch for shuffling
+            try:
+                if hasattr(self.train_loader, "sampler") and isinstance(self.train_loader.sampler, torch.utils.data.distributed.DistributedSampler):
+                    self.train_loader.sampler.set_epoch(epoch)
+            except Exception:
+                pass
+
             self._train_epoch(epoch)
             self._val_epoch(epoch)
 
@@ -66,15 +81,14 @@ class BaseTrainer(ABC):
             )
 
             if dist.is_initialized():
-                dist.barrier()  # make sure all ranks finish validation first
-            if self.rank == 0:
+                dist.barrier()
+            if self.is_master:
                 self.checkpoint(epoch=epoch, logs=logs)
 
             if self.scheduler:
                 self.scheduler.step()
 
         self.logger.info("Training complete")
-
 
     @abstractmethod
     def _train_epoch(self, epoch):
@@ -94,147 +108,137 @@ class BaseTrainer(ABC):
 
 
 class SegTrainer(BaseTrainer):
-    def __init__(self, *args, criterion, **kwargs):
+    def __init__(self, *args, criterion, num_classes=3, use_amp=None, **kwargs):
+        """
+        Segmentation trainer ready for multi-GPU DDP.
+
+        Args:
+            num_classes (int): number of classes in segmentation task
+            use_amp (bool|None): whether to use automatic mixed precision. If None, AMP will be enabled when using CUDA.
+        """
         super().__init__(*args, **kwargs)
         self.criterion = criterion
-        self.seg_metrics = SegmentationMetricLogger(num_classes= 3 , device=self.device)
+        self.seg_metrics = SegmentationMetricLogger(num_classes=num_classes, device=self.device)
+
+        if use_amp is None:
+            self.use_amp = torch.cuda.is_available() and ("cuda" in str(self.device).lower())
+        else:
+            self.use_amp = bool(use_amp)
+
+        self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
 
     def _train_epoch(self, epoch):
-        """ Train one epoch """
-        # Put model in training mode
         self.model.train()
         self.meters.reset()
 
-        self.logger.info(f"Training epoch {epoch}")
+        if self.is_master:
+            self.logger.info(f"Training epoch {epoch}")
+            p_bar = tqdm(self.train_loader)
+        else:
+            p_bar = self.train_loader
 
-        p_bar = tqdm(range(len(self.train_loader)))
-
-        iter_loader = iter(self.train_loader)
-
-        for batch_idx in range(len(self.train_loader)):
-            # Zero the gradient
+        for batch_idx, batch in enumerate(p_bar):
             self.model.zero_grad()
-                
-            # Grab the next batch and run through train_step
-            batch = next(iter_loader)
-            train_loss = self._train_step(batch)
 
-            # Backpropagate the errors
-            train_loss.backward()
+            if self.use_amp:
+                with torch.cuda.amp.autocast(enabled=True):
+                    train_loss = self._train_step(batch)
+                self.scaler.scale(train_loss).backward()
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+            else:
+                train_loss = self._train_step(batch)
+                train_loss.backward()
+                self.optimizer.step()
 
-            # Update the train loss meter
-            self.meters.update('train_loss', train_loss.item())
+            try:
+                loss_value = train_loss.item()
+            except Exception:
+                loss_value = float(train_loss)
+            self.meters.update('train_loss', loss_value)
 
-            # Step the optimizer
-            self.optimizer.step()
-
-            # Update progress bar
-            p_bar.set_description(
-                "Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Train Loss: {loss:.6f}".format(
-                    epoch=epoch,
-                    epochs=self.epochs,
-                    batch=batch_idx + 1,
-                    iter=len(self.train_loader),
-                    lr=self.scheduler.get_last_lr()[0],
-                    loss=train_loss.item()
+            if self.is_master:
+                lr = self.scheduler.get_last_lr()[0] if self.scheduler else 0.0
+                p_bar.set_description(
+                    f"Train Epoch: {epoch}/{self.epochs}. Iter: {batch_idx+1}/{len(self.train_loader)}. "
+                    f"LR: {lr:.6f}. Loss: {loss_value:.6f}"
                 )
-            )
-            p_bar.update()
-        p_bar.close()
 
     def _train_step(self, batch):
-        """ Train one batch """
-        
-        # Unpack the batch
-        imgs, targets, img_ids = batch
+        imgs, targets, _ = batch
         imgs = imgs.to(self.device)
         targets = targets.to(self.device)
 
-        # Forward pass through the model and compute loss
         logits = self.model(imgs)
+        loss = self.criterion(logits, targets.long())
+        return loss
 
-        train_loss = self.criterion(logits, targets.long())
-
-        return train_loss
-    
     @torch.no_grad()
     def _val_epoch(self, epoch):
-        """ Validate one epoch """
-
-        self.seg_metrics.reset()
-
-        # Put model in evaluation mode
         self.model.eval()
+        self.seg_metrics.reset()
+        self.meters.reset()
 
-        self.logger.info(f"Validating epoch {epoch}")
+        if self.is_master:
+            self.logger.info(f"Validating epoch {epoch}")
+            p_bar = tqdm(self.val_loader)
+        else:
+            p_bar = self.val_loader
 
-        p_bar = tqdm(range(len(self.val_loader)))
-
-        iter_loader = iter(self.val_loader)
-
-        for batch_idx in range(len(self.val_loader)):
-            batch = next(iter_loader)
+        for batch_idx, batch in enumerate(p_bar):
             val_loss = self._val_step(batch)
-            
-            # Update the val loss meter
-            self.meters.update('val_loss', val_loss.item())
+            try:
+                val_value = val_loss.item()
+            except Exception:
+                val_value = float(val_loss)
+            self.meters.update('val_loss', val_value)
 
-            # Update progress bar
-            p_bar.set_description(
-                "Val Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Val Loss: {loss:.6f}".format(
-                    epoch=epoch,
-                    epochs=self.epochs,
-                    batch=batch_idx + 1,
-                    iter=len(self.val_loader),
-                    lr=self.scheduler.get_last_lr()[0],
-                    loss=val_loss.item()
+            if self.is_master:
+                lr = self.scheduler.get_last_lr()[0] if self.scheduler else 0.0
+                p_bar.set_description(
+                    f"Val Epoch: {epoch}/{self.epochs}. Iter: {batch_idx+1}/{len(self.val_loader)}. "
+                    f"LR: {lr:.6f}. Val Loss: {val_value:.6f}"
                 )
-            )
-            p_bar.update()
-        p_bar.close()
-        
-        #logging avg_metrics
+
+        # Compute metrics
         avg_metrics, mc_metrics = self.seg_metrics.compute()
-        self.logger.info(
-            f"[Val] F1 Score (avg): {avg_metrics.get('f1_score', torch.tensor(0.)).item():.4f}, "
-            f"Jaccard Index (avg): {avg_metrics.get('jaccard_index', torch.tensor(0.)).item():.4f}, "
-            f"Mean IoU (avg): {avg_metrics.get('mIOU', torch.tensor(0.)).item():.4f}"
-        )
+        if self.is_master:
+            f1_avg = avg_metrics.get('f1_score', torch.tensor(0., device=self.device))
+            jaccard_avg = avg_metrics.get('jaccard_index', torch.tensor(0., device=self.device))
+            miou_avg = avg_metrics.get('mIOU', torch.tensor(0., device=self.device))
 
-        mc_f1 = mc_metrics.get('f1_score', torch.tensor([])).tolist()
-        mc_jaccard = mc_metrics.get('jaccard_index', torch.tensor([])).tolist()
-        mc_miou = mc_metrics.get('mIOU', torch.tensor([])).tolist()
+            self.logger.info(
+                f"[Val] F1(avg): {f1_avg.item():.4f}, "
+                f"Jaccard(avg): {jaccard_avg.item():.4f}, "
+                f"mIoU(avg): {miou_avg.item():.4f}"
+            )
 
-        self.logger.info(
-            f"[Val] F1 Score (per-class): {', '.join(f'{v:.4f}' for v in mc_f1)}"
-        )
-        self.logger.info(
-            f"[Val] Jaccard Index (per-class): {', '.join(f'{v:.4f}' for v in mc_jaccard)}"
-        )
-        self.logger.info(
-            f"[Val] Mean IoU (per-class): {', '.join(f'{v:.4f}' for v in mc_miou)}"
-        )
+            mc_f1 = mc_metrics.get('f1_score', torch.tensor([])).tolist()
+            mc_jaccard = mc_metrics.get('jaccard_index', torch.tensor([])).tolist()
+            mc_miou = mc_metrics.get('mIOU', torch.tensor([])).tolist()
+
+            self.logger.info(f"[Val] F1(per-class): {', '.join(f'{v:.4f}' for v in mc_f1)}")
+            self.logger.info(f"[Val] Jaccard(per-class): {', '.join(f'{v:.4f}' for v in mc_jaccard)}")
+            self.logger.info(f"[Val] mIoU(per-class): {', '.join(f'{v:.4f}' for v in mc_miou)}")
+
+        if dist.is_initialized():
+            dist.barrier()
+
+        return self.meters['val_loss'].avg
 
     @torch.no_grad()
     def _val_step(self, batch):
-        """ Validate one batch """
-
-        # Unpack the batch
-        imgs, targets, img_ids = batch
+        imgs, targets, _ = batch
         imgs = imgs.to(self.device)
         targets = targets.to(self.device)
 
-        # Forward pass through model and compute loss
         logits = self.model(imgs)
-
         val_loss = self.criterion(logits, targets.long())
-
-        preds = torch.argmax(logits, dim=1)  
-
+        preds = torch.argmax(logits, dim=1)
         self.seg_metrics.update(preds, targets)
 
         return val_loss
-    
+
 
 class ObjTrainer(BaseTrainer):
     def __init__(self, *args, is_master=True, **kwargs):
