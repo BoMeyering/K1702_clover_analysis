@@ -12,12 +12,11 @@ import torch.distributed as dist
 
 # Helper for DDP loss/metric reduction necessary for dhe reduction to work (input tensors define the device that wil run metric calculations)
 def reduce_tensor(value, device):
-    """Reduce tensor or dict of tensors across all GPUs, always return tensor(s)."""
+    """Reduce tensor or wrap numbers as tensors across GPUs."""
     if isinstance(value, dict):
         return {k: reduce_tensor(v, device) for k, v in value.items()}
 
     if not torch.is_tensor(value):
-        # Wrap floats/ints into tensors so downstream code (like monitor_op) works
         value = torch.tensor(value, device=device, dtype=torch.float32)
 
     if not dist.is_initialized():

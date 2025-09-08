@@ -54,8 +54,8 @@ class BaseTrainer(ABC):
 
             logs = {
                 "epoch": epoch,
-                "train_loss": float(self.meters['train_loss'].avg),
-                "val_loss": float(self.meters['val_loss'].avg),
+                "train_loss": torch.tensor(self.meters['train_loss'].avg, device=self.device),
+                "val_loss": torch.tensor(self.meters['val_loss'].avg, device=self.device),
                 "model_state_dict": self.model.state_dict(),
             }
 
