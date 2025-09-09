@@ -8,6 +8,96 @@ from torch import argmax
 from src.models import create_smp_model, create_fasterrcnn_model
 from src.transforms import get_val_seg_transforms, get_val_obj_transforms
 
+
+# ----------------- Four Point Transform -----------------
+def order_points(pts):
+    """Orders points: top-left, top-right, bottom-right, bottom-left"""
+    rect = np.zeros((4, 2), dtype="float32")
+
+    s = pts.sum(axis=1)
+    rect[0] = pts[np.argmin(s)]   # top-left
+    rect[2] = pts[np.argmax(s)]   # bottom-right
+
+    diff = np.diff(pts, axis=1)
+    rect[1] = pts[np.argmin(diff)]  # top-right
+    rect[3] = pts[np.argmax(diff)]  # bottom-left
+
+    return rect
+
+
+def point_transform(image, pts, output_shape=(512, 512)):
+    """Performs perspective transform given 4 points"""
+    rect = order_points(pts)
+    (tl, tr, br, bl) = rect
+
+    dst = np.array([
+        [0, 0],
+        [output_shape[0] - 1, 0],
+        [output_shape[0] - 1, output_shape[1] - 1],
+        [0, output_shape[1] - 1]
+    ], dtype="float32")
+
+    M = cv2.getPerspectiveTransform(rect, dst)
+    warped = cv2.warpPerspective(image, M, output_shape)
+
+    return warped
+
+
+# ----------------- ROI Extractor -----------------
+class ROIExtractor:
+    def __init__(self, output_dir: str, output_shape=(512, 512)):
+        """
+        Args:
+            output_dir (str): Where to save cropped ROI images
+            output_shape (tuple): Desired output (H, W) for the perspective transform
+        """
+        # Always use fixed ROI output dir
+        self.output_dir = "outputs/roi_cropped_images"
+        self.output_shape = output_shape
+        os.makedirs(self.output_dir, exist_ok=True)
+
+    def extract_from_detections(self, image: np.ndarray, detections: list, image_path: str, overlay_img: np.ndarray = None) -> str:
+        """
+        Extracts ROI if exactly 4 quadrat corners are detected.
+
+        Args:
+            image (np.ndarray): Original image
+            detections (list): List of detection tuples (label, x1, y1, x2, y2, score)
+            image_path (str): Path to original image (used for naming)
+            overlay_img (np.ndarray): Optional overlay image (segmentation applied)
+
+        Returns:
+            str: Path to saved ROI image, or None if failed
+        """
+        if len(detections) != 4:
+            print(f"[info] Skipping ROI extraction: need 4 corners, got {len(detections)}")
+            return None
+
+        # Compute centers of bounding boxes
+        pts = np.array([
+            [(x1 + x2) / 2, (y1 + y2) / 2] for (_, x1, y1, x2, y2, _) in detections
+        ], dtype=np.float32)
+
+        try:
+            # Raw ROI crop (optional, for your reference)
+            roi = point_transform(image, pts, output_shape=self.output_shape)
+            roi_out_path = os.path.join(self.output_dir, f"roi_{os.path.basename(image_path)}")
+            cv2.imwrite(roi_out_path, roi)
+            print(f"[info] Saved ROI: {roi_out_path}")
+
+            # ROI with segmentation overlay
+            if overlay_img is not None:
+                roi_overlay = point_transform(overlay_img, pts, output_shape=self.output_shape)
+                roi_overlay_out_path = os.path.join(self.output_dir, f"roi_masked_{os.path.basename(image_path)}")
+                cv2.imwrite(roi_overlay_out_path, roi_overlay)
+                print(f"[info] Saved ROI with mask: {roi_overlay_out_path}")
+
+            return roi_out_path
+        except Exception as e:
+            print(f"[warn] Failed ROI transform: {e}")
+            return None
+
+
 # ----------------- Main -----------------
 def main():
     config = OmegaConf.load("inference_config.yaml")
@@ -25,6 +115,9 @@ def main():
 
     seg_model, det_model = load_models(config, device)
 
+    # ROI extractor instance
+    roi_extractor = ROIExtractor(config.output_dir, output_shape=(512, 512))
+
     for img_path in config.image_paths:
         process_image(
             img_path,
@@ -35,7 +128,8 @@ def main():
             color_map,
             bbox_color_map,
             config,
-            device
+            device,
+            roi_extractor
         )
 
 
@@ -49,7 +143,6 @@ def load_models(config, device):
         checkpoint = torch.load(config.segmentation.checkpoint, map_location=device)
         state = checkpoint.get("model_state_dict", checkpoint)
 
-        # Strip "module." if present
         new_state = OrderedDict()
         for k, v in state.items():
             nk = k.replace("module.", "")
@@ -73,7 +166,6 @@ def load_models(config, device):
         checkpoint = torch.load(config.detection.checkpoint, map_location=device)
         state_dict = checkpoint.get("model_state_dict", checkpoint)
 
-        # Strip prefixes
         new_state = OrderedDict()
         for k, v in state_dict.items():
             nk = k.replace("module.", "").replace("model.", "")
@@ -101,11 +193,9 @@ def run_detection_inference(model, orig_img, obj_transforms, device, score_thres
     model.eval()
     orig_h, orig_w = orig_img.shape[:2]
 
-    # Apply transforms
     sample = obj_transforms(image=orig_img, bboxes=[], labels=[])
     image_tensor = sample["image"].to(device)
 
-    # Resized image size
     resized_h, resized_w = image_tensor.shape[1:]
 
     with torch.no_grad():
@@ -118,8 +208,8 @@ def run_detection_inference(model, orig_img, obj_transforms, device, score_thres
         scale_x = orig_w / resized_w
         scale_y = orig_h / resized_h
 
-        boxes[:, [0, 2]] = boxes[:, [0, 2]] * scale_x
-        boxes[:, [1, 3]] = boxes[:, [1, 3]] * scale_y
+        boxes[:, [0, 2]] *= scale_x
+        boxes[:, [1, 3]] *= scale_y
         boxes = boxes.astype(int)
 
         if label_map is None:
@@ -172,7 +262,8 @@ def draw_bounding_boxes(image, bboxes, bbox_color_map, scale_factor=0.005, paddi
 
 
 # ----------------- Process image -----------------
-def process_image(image_path, seg_model, det_model, seg_transforms, obj_transforms, color_map, bbox_color_map, config, device):
+def process_image(image_path, seg_model, det_model, seg_transforms, obj_transforms,
+                  color_map, bbox_color_map, config, device, roi_extractor):
     orig_img = cv2.imread(image_path, cv2.IMREAD_COLOR_RGB)
     if orig_img is None:
         print(f"[warn] can't read {image_path}")
@@ -186,6 +277,7 @@ def process_image(image_path, seg_model, det_model, seg_transforms, obj_transfor
         seg_mask = run_segmentation_inference(seg_model, img_tensor, device)
         combined = draw_segmentation_overlay(combined, seg_mask, color_map)
 
+    detections = []
     if det_model is not None:
         detections = run_detection_inference(
             det_model,
@@ -193,7 +285,7 @@ def process_image(image_path, seg_model, det_model, seg_transforms, obj_transfor
             obj_transforms=obj_transforms,
             device=device,
             score_thresh=getattr(config.detection, "score_thresh", 0.7),
-            label_map={1: "quadrat_corner"}  # update with your class labels
+            label_map={1: "quadrat_corner"}
         )
 
         if len(detections) == 0:
@@ -204,11 +296,18 @@ def process_image(image_path, seg_model, det_model, seg_transforms, obj_transfor
                 label, x1, y1, x2, y2, score = det
                 print(f"   {label} | box=({x1},{y1},{x2},{y2}) | score={score:.3f}")
 
-        combined = draw_bounding_boxes(combined, detections, bbox_color_map)
+        # Draw detections only on full image
+        combined_with_boxes = draw_bounding_boxes(combined.copy(), detections, bbox_color_map)
+    else:
+        combined_with_boxes = combined.copy()
+
+    # ---- ROI Extraction with segmentation overlay only ----
+    if detections:
+        roi_extractor.extract_from_detections(orig_img, detections, image_path, overlay_img=combined)
 
     out_path = os.path.join(config.output_dir, os.path.basename(image_path))
     os.makedirs(config.output_dir, exist_ok=True)
-    cv2.imwrite(out_path, combined)
+    cv2.imwrite(out_path, combined_with_boxes)
     print(f"[info] Saved: {out_path}")
 
 
