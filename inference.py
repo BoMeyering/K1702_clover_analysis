@@ -48,51 +48,35 @@ class ROIExtractor:
     def __init__(self, output_dir: str, output_shape=(512, 512)):
         """
         Args:
-            output_dir (str): Where to save cropped ROI images
+            output_dir (str): Where to save cropped masked ROI images
             output_shape (tuple): Desired output (H, W) for the perspective transform
         """
-        # Always use fixed ROI output dir
-        self.output_dir = "outputs/roi_cropped_images"
+        # New folder for masked ROI crops
+        self.output_dir = "outputs/cropped_masked_images"
         self.output_shape = output_shape
         os.makedirs(self.output_dir, exist_ok=True)
 
-    def extract_from_detections(self, image: np.ndarray, detections: list, image_path: str, overlay_img: np.ndarray = None) -> str:
+    def extract_from_detections(self, image: np.ndarray, detections: list, image_path: str, overlay_img: np.ndarray) -> str:
         """
-        Extracts ROI if exactly 4 quadrat corners are detected.
-
-        Args:
-            image (np.ndarray): Original image
-            detections (list): List of detection tuples (label, x1, y1, x2, y2, score)
-            image_path (str): Path to original image (used for naming)
-            overlay_img (np.ndarray): Optional overlay image (segmentation applied)
-
-        Returns:
-            str: Path to saved ROI image, or None if failed
+        Extracts ROI if exactly 4 quadrat corners are detected and saves only the masked version.
         """
         if len(detections) != 4:
             print(f"[info] Skipping ROI extraction: need 4 corners, got {len(detections)}")
             return None
 
-        # Compute centers of bounding boxes
         pts = np.array([
             [(x1 + x2) / 2, (y1 + y2) / 2] for (_, x1, y1, x2, y2, _) in detections
         ], dtype=np.float32)
 
         try:
-            # Raw ROI crop (optional, for your reference)
-            roi = point_transform(image, pts, output_shape=self.output_shape)
-            roi_out_path = os.path.join(self.output_dir, f"roi_{os.path.basename(image_path)}")
-            cv2.imwrite(roi_out_path, roi)
-            print(f"[info] Saved ROI: {roi_out_path}")
+            # ROI with binary segmentation mask only
+            roi_overlay = point_transform(overlay_img, pts, output_shape=self.output_shape)
+            base_name, ext = os.path.splitext(os.path.basename(image_path))
+            roi_overlay_out_path = os.path.join(self.output_dir, f"{base_name}_masked.png")
+            cv2.imwrite(roi_overlay_out_path, roi_overlay)
+            print(f"[info] Saved ROI with clover mask: {roi_overlay_out_path}")
 
-            # ROI with segmentation overlay
-            if overlay_img is not None:
-                roi_overlay = point_transform(overlay_img, pts, output_shape=self.output_shape)
-                roi_overlay_out_path = os.path.join(self.output_dir, f"roi_masked_{os.path.basename(image_path)}")
-                cv2.imwrite(roi_overlay_out_path, roi_overlay)
-                print(f"[info] Saved ROI with mask: {roi_overlay_out_path}")
-
-            return roi_out_path
+            return roi_overlay_out_path
         except Exception as e:
             print(f"[warn] Failed ROI transform: {e}")
             return None
@@ -270,6 +254,7 @@ def process_image(image_path, seg_model, det_model, seg_transforms, obj_transfor
         return
 
     combined = orig_img.copy()
+    seg_mask = None
 
     if seg_model is not None:
         sample = seg_transforms(image=orig_img, mask=None)
@@ -296,15 +281,22 @@ def process_image(image_path, seg_model, det_model, seg_transforms, obj_transfor
                 label, x1, y1, x2, y2, score = det
                 print(f"   {label} | box=({x1},{y1},{x2},{y2}) | score={score:.3f}")
 
-        # Draw detections only on full image
         combined_with_boxes = draw_bounding_boxes(combined.copy(), detections, bbox_color_map)
     else:
         combined_with_boxes = combined.copy()
 
-    # ---- ROI Extraction with segmentation overlay only ----
-    if detections:
-        roi_extractor.extract_from_detections(orig_img, detections, image_path, overlay_img=combined)
+    # ---- ROI Extraction with clover-only mask ----
+    if detections and seg_mask is not None:
+        # Isolate clover class (adjust class ID if needed)
+        CLOVER_CLASS_ID = 2
+        clover_mask = (seg_mask == CLOVER_CLASS_ID).astype(np.uint8) * 255
 
+        if clover_mask.shape != orig_img.shape[:2]:
+            clover_mask = cv2.resize(clover_mask, (orig_img.shape[1], orig_img.shape[0]), interpolation=cv2.INTER_NEAREST)
+
+        roi_extractor.extract_from_detections(orig_img, detections, image_path, overlay_img=clover_mask)
+
+    # Save normal inference overlay as before
     out_path = os.path.join(config.output_dir, os.path.basename(image_path))
     os.makedirs(config.output_dir, exist_ok=True)
     cv2.imwrite(out_path, combined_with_boxes)
