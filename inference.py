@@ -1,4 +1,5 @@
 import os
+import glob
 import cv2
 import numpy as np
 import torch
@@ -71,7 +72,7 @@ class ROIExtractor:
         try:
             # ROI with binary segmentation mask only
             roi_overlay = point_transform(overlay_img, pts, output_shape=self.output_shape)
-            base_name, ext = os.path.splitext(os.path.basename(image_path))
+            base_name = os.path.splitext(os.path.basename(image_path))[0]
             roi_overlay_out_path = os.path.join(self.output_dir, f"{base_name}_masked.png")
             cv2.imwrite(roi_overlay_out_path, roi_overlay)
             print(f"[info] Saved ROI with clover mask: {roi_overlay_out_path}")
@@ -102,7 +103,14 @@ def main():
     # ROI extractor instance
     roi_extractor = ROIExtractor(config.output_dir, output_shape=(512, 512))
 
-    for img_path in config.image_paths:
+    # 🔹 New: load all images from input_folder
+    image_paths = sorted(glob.glob(os.path.join(config.input_folder, "*.[pj][pn]g")))
+
+    if not image_paths:
+        print(f"[warn] No images found in {config.input_folder}")
+        return
+
+    for img_path in image_paths:
         process_image(
             img_path,
             seg_model,
