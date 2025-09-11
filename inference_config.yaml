@@ -1,11 +1,7 @@
 enable_segmentation: true
 enable_detection: true
 
-image_paths:
-  - data/processed/images/Ta00070_20170703.jpg
-  - data/processed/images/Ta00079_20170703.jpg
-  - data/processed/images/Ta00058_20170703.jpg
-  - data/processed/images/Ta00696_20170703.jpg
+input_folder: data/processed/images
 
 output_dir: outputs/inference
 
