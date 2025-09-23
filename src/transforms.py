@@ -4,15 +4,16 @@ Image Augmentations
 BoMeyering 2025
 """
 
+from typing import Tuple
 import albumentations as A
 from albumentations.pytorch.transforms import ToTensorV2
 
 
-def get_train_seg_transforms(resize: tuple[int, int]):
+def get_train_seg_transforms(resize: Tuple[int, int]):
     """_summary_
 
     Args:
-        resize (tuple[int, int]): _description_
+        resize (Tuple[int, int]): _description_
     """
 
     transforms = A.Compose(
@@ -30,11 +31,11 @@ def get_train_seg_transforms(resize: tuple[int, int]):
 
     return transforms
 
-def get_train_obj_transforms(resize: tuple[int, int]):
+def get_train_obj_transforms(resize: Tuple[int, int]):
     """_summary_
 
     Args:
-        resize (tuple[int, int]): _description_
+        resize (Tuple[int, int]): _description_
     """
     transforms = A.Compose(
         [
@@ -53,11 +54,11 @@ def get_train_obj_transforms(resize: tuple[int, int]):
 
     return transforms
 
-def get_val_seg_transforms(resize: tuple[int, int]):
+def get_val_seg_transforms(resize: Tuple[int, int]):
     """_summary_
 
     Args:
-        resize (tuple[int, int]): _description_
+        resize (Tuple[int, int]): _description_
     """
 
     transforms = A.Compose(
@@ -71,11 +72,11 @@ def get_val_seg_transforms(resize: tuple[int, int]):
 
     return transforms
 
-def get_val_obj_transforms(resize: tuple[int, int]):
+def get_val_obj_transforms(resize: Tuple[int, int]):
     """_summary_
 
     Args:
-        resize (tuple[int, int]): _description_
+        resize (Tuple[int, int]): _description_
     """
 
     transforms = A.Compose(
@@ -87,6 +88,23 @@ def get_val_obj_transforms(resize: tuple[int, int]):
         bbox_params=A.BboxParams(
             format="pascal_voc", label_fields=["labels"]
         )
+    )
+
+    return transforms
+
+def get_inf_transforms(resize: Tuple[int, int]):
+    """_summary_
+
+    Args:
+        resize (Tuple[int, int]): _description_
+    """
+
+    transforms = A.Compose(
+        [
+            A.Resize(resize[0], resize[1], p=1.0),
+            A.Normalize(),
+            ToTensorV2()
+        ]
     )
 
     return transforms

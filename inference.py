@@ -1,47 +1,23 @@
+"""
+inference.py
+Model inference and post-processing script
+Mirza Sakiroglu and BoMeyering 2025
+"""
+
 import os
 import glob
 import cv2
 import numpy as np
 import torch
+from glob import glob
 from omegaconf import OmegaConf
 from collections import OrderedDict
 from torch import argmax
-from src.models import create_smp_model, create_fasterrcnn_model
-from src.transforms import get_val_seg_transforms, get_val_obj_transforms
+from typing import Tuple, Union
+from src.models import create_smp_model, create_fasterrcnn_model, load_models
+from src.transforms import get_inf_transforms
+from src.utils.postprocess import get_corner_pts, point_transform, order_pts
 
-
-# ----------------- Four Point Transform -----------------
-def order_points(pts):
-    """Orders points: top-left, top-right, bottom-right, bottom-left"""
-    rect = np.zeros((4, 2), dtype="float32")
-
-    s = pts.sum(axis=1)
-    rect[0] = pts[np.argmin(s)]   # top-left
-    rect[2] = pts[np.argmax(s)]   # bottom-right
-
-    diff = np.diff(pts, axis=1)
-    rect[1] = pts[np.argmin(diff)]  # top-right
-    rect[3] = pts[np.argmax(diff)]  # bottom-left
-
-    return rect
-
-
-def point_transform(image, pts, output_shape=(512, 512)):
-    """Performs perspective transform given 4 points"""
-    rect = order_points(pts)
-    (tl, tr, br, bl) = rect
-
-    dst = np.array([
-        [0, 0],
-        [output_shape[0] - 1, 0],
-        [output_shape[0] - 1, output_shape[1] - 1],
-        [0, output_shape[1] - 1]
-    ], dtype="float32")
-
-    M = cv2.getPerspectiveTransform(rect, dst)
-    warped = cv2.warpPerspective(image, M, output_shape)
-
-    return warped
 
 
 # ----------------- ROI Extractor -----------------
@@ -91,20 +67,21 @@ def main():
     bbox_color_map = {k: tuple(v) for k, v in config.bbox_color_map.items()}
 
     # Transforms
-    seg_transforms = get_val_seg_transforms(resize=(1024, 1024))
-    det_cfg_input_size = tuple(config.detection.get("input_size", (1024, 1024)))
-    obj_transforms = get_val_obj_transforms(resize=det_cfg_input_size)
+    image_size = tuple(config.get('image_resize', (1024, 1024)))
+    inf_transforms = get_inf_transforms(resize=image_size)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[info] Using device: {device}")
 
     seg_model, det_model = load_models(config, device)
+    seg_model.eval()
+    det_model.eval()
 
     # ROI extractor instance
     roi_extractor = ROIExtractor(config.output_dir, output_shape=(512, 512))
 
-    # 🔹 New: load all images from input_folder
-    image_paths = sorted(glob.glob(os.path.join(config.input_folder, "*.[pj][pn]g")))
+    # Grab all image names from input_folder
+    image_paths = [file for file in glob('*', root_dir=config.input_folder) if file.endswith(('png', 'jpg'))]
 
     if not image_paths:
         print(f"[warn] No images found in {config.input_folder}")
@@ -115,8 +92,7 @@ def main():
             img_path,
             seg_model,
             det_model,
-            seg_transforms,
-            obj_transforms,
+            inf_transforms,
             color_map,
             bbox_color_map,
             config,
@@ -125,64 +101,20 @@ def main():
         )
 
 
-# ----------------- Model loading -----------------
-def load_models(config, device):
-    seg_model, det_model = None, None
-
-    # ----------------- Segmentation -----------------
-    if getattr(config, "enable_segmentation", False):
-        seg_model = create_smp_model(config=config.segmentation.model_config)
-        checkpoint = torch.load(config.segmentation.checkpoint, map_location=device)
-        state = checkpoint.get("model_state_dict", checkpoint)
-
-        new_state = OrderedDict()
-        for k, v in state.items():
-            nk = k.replace("module.", "")
-            new_state[nk] = v
-
-        seg_model.load_state_dict(new_state, strict=False)
-        seg_model.to(device).eval()
-        print("[info] Loaded segmentation model")
-
-    # ----------------- Detection -----------------
-    if getattr(config, "enable_detection", False):
-        det_cfg = {
-            "architecture": config.detection.get("architecture", "fasterrcnn_resnet50_fpn"),
-            "pretrained": config.detection.get("pretrained", True),
-            "num_classes": int(config.detection.get("num_classes", 2)),
-            "max_det_per_image": int(config.detection.get("max_det_per_image", 20)),
-            "image_size": tuple(config.detection.get("input_size", (1024, 1024)))
-        }
-
-        det_model = create_fasterrcnn_model(**det_cfg)
-        checkpoint = torch.load(config.detection.checkpoint, map_location=device)
-        state_dict = checkpoint.get("model_state_dict", checkpoint)
-
-        new_state = OrderedDict()
-        for k, v in state_dict.items():
-            nk = k.replace("module.", "").replace("model.", "")
-            new_state[nk] = v
-
-        det_model.load_state_dict(new_state, strict=False)
-        det_model.to(device).eval()
-        print("[info] Loaded detection model (Faster R-CNN)")
-
-    return seg_model, det_model
-
-
 # ----------------- Segmentation inference -----------------
-def run_segmentation_inference(seg_model, img_tensor, device):
-    seg_model.eval()
-    with torch.no_grad():
-        x = img_tensor.unsqueeze(0).to(device)
-        logits = seg_model(x)
-        preds = argmax(logits, dim=1).squeeze(0).cpu().numpy().astype(np.uint8)
-    return preds
+
 
 
 # ----------------- Detection inference -----------------
-def run_detection_inference(model, orig_img, obj_transforms, device, score_thresh=0.0, label_map=None):
-    model.eval()
+@torch.no_grad()
+def run_detection_inference(
+    model: torch.nn.Module, 
+    orig_img 
+    obj_transforms, 
+    device, 
+    score_thresh=0.0, 
+    label_map=None
+    ) -> np.ndarray:
     orig_h, orig_w = orig_img.shape[:2]
 
     sample = obj_transforms(image=orig_img, bboxes=[], labels=[])
@@ -196,6 +128,8 @@ def run_detection_inference(model, orig_img, obj_transforms, device, score_thres
         boxes = outputs["boxes"].cpu().numpy()
         scores = outputs["scores"].cpu().numpy()
         labels = outputs["labels"].cpu().numpy()
+
+        print(outputs)
 
         scale_x = orig_w / resized_w
         scale_y = orig_h / resized_h
@@ -254,12 +188,23 @@ def draw_bounding_boxes(image, bboxes, bbox_color_map, scale_factor=0.005, paddi
 
 
 # ----------------- Process image -----------------
-def process_image(image_path, seg_model, det_model, seg_transforms, obj_transforms,
-                  color_map, bbox_color_map, config, device, roi_extractor):
+def process_image(
+        image_path, 
+        seg_model, 
+        det_model, 
+        inf_transforms,
+        color_map, 
+        bbox_color_map, 
+        config, device, 
+        roi_extractor
+    ):
+    """
+    """
+
     orig_img = cv2.imread(image_path, cv2.IMREAD_COLOR_RGB)
     if orig_img is None:
         print(f"[warn] can't read {image_path}")
-        return
+        return None
 
     combined = orig_img.copy()
     seg_mask = None

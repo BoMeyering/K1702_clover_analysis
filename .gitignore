@@ -164,6 +164,8 @@ data/processed/targets/*.png
 data/raw/images/*.jpg
 data/raw/mat_files/*.mat
 
+outputs/*
+
 outputs/**/*.jpg
 
 **.pth

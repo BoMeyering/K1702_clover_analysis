@@ -18,16 +18,18 @@ bbox_color_map:
 segmentation:
   model_config:
     architecture: Segformer           
-    encoder_name: mit_b1
+    encoder_name: mit_b5
     encoder_depth: 5
     encoder_weights: imagenet
     input_channels: 3
     classes: 3
-  checkpoint: checkpoints/segmentation_models/Segformer_mit_b1_1024_epoch_9_vloss-0.027708.pth
+  checkpoint: checkpoints/segmentation_models/Segformer_mit_b5_1024_epoch_10_vloss-0.026721.pth
 
 detection:
   image_size: [1024, 1024]
   architecture: fasterrcnn_resnet50_fpn
   num_classes: 2
   max_det_per_image: 20
-  checkpoint: checkpoints/object_detection_models/fasterrcnn_resnet50_fpn_1024_epoch_10_vloss-0.109507.pth
+  checkpoint: checkpoints/object_detection_models/fasterrcnn_resnet50_fpn_1024_epoch_4_vloss-0.110925.pth
+
+image_size: [1024, 1024]
