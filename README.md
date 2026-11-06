@@ -26,6 +26,27 @@ $ uv run train_object_detection_model.py
 $ uv run train_segmentation_model.py
 ```
 The top k=5 best model runs (based on the validation loss) will be stored in `checkpoints`.
+
+## Semi-Supervised Training (FlexMatch on the HQ masks)
+Tests how far 10 hand-drawn, high-quality masks go when every other image is used unlabeled. The code lives in `src/ssl/` and is ported from the `pgcview_v2_training_framework` FlexMatch trainer.
+
+1. Download the finished Labelbox labels and rasterize them (kept separate from the SAM masks in `data/processed/targets`):
+```
+$ uv sync --all-extras
+$ uv run scripts/download_labelbox_export.py   # needs LABELBOX_API_KEY -> data/raw/labelbox_hq/
+$ uv run scripts/build_hq_targets.py           # -> data/processed_hq/targets/, classes in metadata/hq_target_mapping.json
+```
+2. Train FlexMatch and the supervised-only baseline (same labeled set, holdout, schedule and evaluation):
+```
+$ uv run torchrun --nproc_per_node=2 train_flexmatch.py -c configs/flexmatch_hq10.yaml
+$ uv run torchrun --nproc_per_node=2 train_flexmatch.py -c configs/supervised_hq10.yaml
+```
+Any config value can be overridden on the command line, e.g. `training.epochs=5 wandb.mode=disabled`; without `torchrun` it runs on one GPU.
+
+- **Labeled:** the HQ images minus `data.holdout_ids` (2 held out by default). **Unlabeled:** every other image (1,125).
+- **Evaluation:** the HQ holdout (6 classes, EMA weights, scored at decoded resolution) and, every few epochs, agreement with the old SAM masks on the `val` split with predictions collapsed to soil/quadrat/clover. The SAM masks are never used as training targets; they are also used to score pseudo-label accuracy during training (logged as `train/pl_acc_*`).
+- **Thresholds:** per-class FlexMatch thresholds from a running, DDP-synchronised learning status. `flexmatch.normalize: ratio` (default) measures each class's confidence relative to how often it is predicted, so rare-by-area classes like `clover_stems` are not treated as unlearned; `normalize: count` + `status: batch` reproduces the pgcview behaviour.
+- Checkpoints (raw + EMA weights, FlexMatch state, config) go to `checkpoints/ssl/<run>/`; metrics, per-class thresholds and prediction panels go to wandb (`k1702_clover_ssl`).
 ## Dataset Overview :open_file_folder:
 The Perennial Legumes Program at The Land Institute cultivated XXXX unique accessions from the USDA National Plant Germplasm System (NPGS) in the summer of 2017. Each plant was cultivated as a single plant plot. Plots were imaged with a Canon DLSR camera at least one time during the season. Clover plant were framed by a standard sampling quadrat constructed of 3/4" Schedule 40 PVC pipe with the following dimensions:
 * OD (HxW) = 18"x18"

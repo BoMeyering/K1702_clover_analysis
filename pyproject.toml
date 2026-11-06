@@ -23,6 +23,7 @@ dependencies = [
     "torchmetrics>=1.7.3",
     "torchvision>=0.22.0",
     "tqdm>=4.67.1",
+    "wandb>=0.21",
 ]
 
 [project.optional-dependencies]
@@ -34,6 +35,10 @@ quadrat-detection = [
     "ndjson>=0.3.1",
     "objdetecteval",
     "pytorch-lightning>=2.5",
+]
+# Pulling annotations from Labelbox (scripts/download_labelbox_export.py)
+labelbox = [
+    "labelbox>=7.0.0",
 ]
 # src/mask_generation (Segment Anything)
 mask-generation = [

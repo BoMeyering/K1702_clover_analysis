@@ -160,6 +160,9 @@ data/processed/images/*.jpg
 data/processed/targets/*.png
 data/raw/images/*.jpg
 data/raw/mat_files/*.mat
+data/raw/labelbox_hq/
+data/processed_hq/
+wandb/
 
 outputs/*
 
