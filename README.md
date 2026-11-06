@@ -5,17 +5,25 @@ Authors
 - [Mirza Sakiroglu](https://github.com/MirzaSakiroglu)
 
 ## Environment Setup
-Create a new virtual environment using your favorite (venv, conda, pyenv, etc.)
-Install all dependencies
+This project uses [uv](https://docs.astral.sh/uv/) to manage Python and dependencies. Install uv, then from the repo root:
 ```
-$ pip install -r requirements
+$ uv sync
 ```
+This creates `.venv/` with Python 3.12 and the exact versions pinned in `uv.lock`. PyTorch is installed from the CUDA 12.8 index (required for RTX 50xx / Blackwell GPUs).
+
+Optional extras for the sub-pipelines:
+```
+$ uv sync --extra quadrat-detection   # EfficientDet / Lightning (src/quadrat_detection)
+$ uv sync --extra mask-generation     # Segment Anything (src/mask_generation)
+$ uv sync --all-extras                # everything
+```
+Add or remove dependencies with `uv add <pkg>` / `uv remove <pkg>` so `pyproject.toml` and `uv.lock` stay in sync.
 
 ## Training Scripts
-You can directly train the models in your environment by calling them directly
+Run scripts through uv (or activate `.venv` with `source .venv/bin/activate` and call `python` directly):
 ```
-$ python train_object_detection_model.py
-$ python train_segmentation_model.py
+$ uv run train_object_detection_model.py
+$ uv run train_segmentation_model.py
 ```
 The top k=5 best model runs (based on the validation loss) will be stored in `checkpoints`.
 ## Dataset Overview :open_file_folder:
@@ -133,7 +141,8 @@ src/
 .gitignore
 LICENSE
 README.md
-requirements.txt
+pyproject.toml
+uv.lock
 train_object_detection_model.py
 train_segmentation_model.py
 ```
