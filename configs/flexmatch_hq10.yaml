@@ -1,5 +1,5 @@
 # FlexMatch: 8 HQ Labelbox images labeled (2 held out for evaluation), all other images unlabeled.
-# Run:  uv run torchrun --nproc_per_node=2 train_flexmatch.py -c configs/flexmatch_hq10.yaml
+# Run:  uv run k1702 train -c configs/flexmatch_hq10.yaml
 model_run: flexmatch_hq10_segformer_mitb1
 
 device: cuda

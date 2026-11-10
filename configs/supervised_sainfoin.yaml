@@ -1,6 +1,6 @@
 # Supervised-only baseline: identical to flexmatch_sainfoin.yaml (same labeled set, holdout, schedule,
 # steps per epoch and evaluation) but the unlabeled scans are never used.
-# Run:  uv run torchrun --nproc_per_node=2 train_flexmatch.py -c configs/supervised_sainfoin.yaml
+# Run:  uv run k1702 train -c configs/supervised_sainfoin.yaml
 model_run: supervised_sainfoin_segformer_mitb1
 
 images:

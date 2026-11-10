@@ -56,10 +56,10 @@ $ uv run scripts/build_hq_targets.py           # -> data/processed_hq/targets/, 
 ```
 2. Train FlexMatch and the supervised-only baseline (same labeled set, holdout, schedule and evaluation):
 ```
-$ uv run torchrun --nproc_per_node=2 train_flexmatch.py -c configs/flexmatch_hq10.yaml
-$ uv run torchrun --nproc_per_node=2 train_flexmatch.py -c configs/supervised_hq10.yaml
+$ uv run k1702 train -c configs/flexmatch_hq10.yaml
+$ uv run k1702 train -c configs/supervised_hq10.yaml
 ```
-Any config value can be overridden on the command line, e.g. `training.epochs=5 wandb.mode=disabled`; without `torchrun` it runs on one GPU.
+Any config value can be overridden on the command line, e.g. `training.epochs=5 wandb.mode=disabled`. All visible GPUs are used by default; pass `--gpus 1` for a single-GPU run.
 
 - **Labeled:** the HQ images minus `data.holdout_ids` (2 held out by default). **Unlabeled:** every other image (1,125).
 - **Evaluation:** the HQ holdout (6 classes, EMA weights, scored at decoded resolution) and, every few epochs, agreement with the old SAM masks on the `val` split with predictions collapsed to soil/quadrat/clover. The SAM masks are never used as training targets; they are also used to score pseudo-label accuracy during training (logged as `train/pl_acc_*`).

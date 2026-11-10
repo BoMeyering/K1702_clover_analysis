@@ -3,7 +3,7 @@
 # for this dataset, so proxy evaluation and pseudo-label diagnostics are off and checkpoints are
 # selected on the HQ holdout alone.
 # Prereq:  uv run scripts/build_sainfoin_mat_targets.py      (writes the .png targets read here)
-# Run:     uv run torchrun --nproc_per_node=2 train_flexmatch.py -c configs/flexmatch_sainfoin.yaml
+# Run:     uv run k1702 train -c configs/flexmatch_sainfoin.yaml
 model_run: flexmatch_sainfoin_segformer_mitb1
 
 device: cuda

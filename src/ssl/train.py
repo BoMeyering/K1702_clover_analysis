@@ -3,10 +3,9 @@ src/ssl/train.py
 FlexMatch / supervised segmentation training on the HQ Labelbox masks: the HQ images are the labeled
 set, every other image is the unlabeled set. Adapted from pgcview_v2_training_framework/train_flexmatch.py.
 
-Entry points (all equivalent; `k1702 train` launches torchrun for you on multi-GPU machines):
+Run through the CLI (src/cli.py), which launches torchrun itself on multi-GPU machines:
     uv run k1702 train -c configs/flexmatch_sainfoin.yaml                 # all visible GPUs
     uv run k1702 train -c configs/flexmatch_sainfoin.yaml --gpus 1 training.epochs=1 wandb.mode=disabled
-    uv run torchrun --nproc_per_node=2 train_flexmatch.py -c configs/flexmatch_sainfoin.yaml
 
 Any config value can be overridden with dotted key=value arguments.
 BoMeyering 2025

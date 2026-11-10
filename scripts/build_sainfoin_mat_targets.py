@@ -6,7 +6,7 @@ a single 2D array under the 'data' key.
 
 Reads   data/raw/sainfoin_leaves/labelbox_hq/masks/<img_id>/{annotations.json, NNN_<class>.png}
 Writes  data/processed_hq/sainfoin_leaves/targets/<img_id>.mat   (uint8, 'data' key)
-        data/processed_hq/sainfoin_leaves/targets/<img_id>.png   (same class-index array; read by train_flexmatch.py)
+        data/processed_hq/sainfoin_leaves/targets/<img_id>.png   (same class-index array; read by k1702 train)
 
 Classes (metadata/sainfoin_leaf_class_map.json): 0 background, 1 leaflet, 2 petiole, 3 tag.
 Pixels not covered by any instance mask stay background (0); overlapping instances
