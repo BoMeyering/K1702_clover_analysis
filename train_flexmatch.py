@@ -96,8 +96,16 @@ def build_id_pools(conf):
         raise ValueError(f'holdout_ids not in {d.hq_target_dir}: {sorted(set(holdout) - set(hq_ids))}')
     labeled = sorted(set(hq_ids) - set(holdout) - exclude)
 
-    split = pl.read_csv(d.split_csv)
-    all_ids = {i for i in split['img_id'].to_list() if (Path(d.image_dir) / f'{i}.jpg').exists()}
+    if d.split_csv:
+        split = pl.read_csv(d.split_csv)
+        all_ids = {i for i in split['img_id'].to_list() if (Path(d.image_dir) / f'{i}.jpg').exists()}
+    else:
+        if d.proxy.enabled:
+            raise ValueError('data.proxy.enabled needs data.split_csv to choose the proxy images')
+        all_ids = {p.stem for p in Path(d.image_dir).glob('*.jpg')}
+    missing_hq = set(hq_ids) - all_ids
+    if missing_hq:
+        raise FileNotFoundError(f'HQ targets without an image in {d.image_dir}: {sorted(missing_hq)}')
     proxy = []
     if d.proxy.enabled:
         proxy = sorted(set(split.filter(pl.col('split') == d.proxy.split)['img_id'].to_list()) & all_ids - set(hq_ids) - exclude)
@@ -133,7 +141,7 @@ def main():
     # Data
     resize, red = tuple(conf.images.resize), conf.images.decode_reduction
     norm = get_normalize_transforms(conf.metadata.norm.means, conf.metadata.norm.std)
-    geometric = get_geometric_transforms(resize)
+    geometric = get_geometric_transforms(resize, scale=conf.images.crop_scale, ratio=conf.images.crop_ratio)
     l_ds = LabeledDataset(labeled, conf.data.image_dir, conf.data.hq_target_dir, geometric=geometric,
                           photometric=get_labeled_photometric_transforms(), normalize=norm, reduction=red)
     l_sampler = DistributedInfiniteSampler(l_ds, num_replicas=conf.world_size, rank=conf.rank, shuffle=True, seed=conf.training.seed)
@@ -147,7 +155,7 @@ def main():
     u_loader = None
     if conf.flexmatch.enabled:
         u_ds = UnlabeledDataset(unlabeled, conf.data.image_dir, geometric, get_strong_photometric_transforms(), norm, reduction=red,
-                                sam_target_dir=conf.data.proxy.target_dir if conf.data.sam_diagnostics else None)
+                                sam_target_dir=conf.data.proxy.target_dir if (conf.data.sam_diagnostics and conf.data.proxy.enabled) else None)
         u_sampler = DistributedInfiniteSampler(u_ds, num_replicas=conf.world_size, rank=conf.rank, shuffle=True, seed=conf.training.seed)
         u_loader = DataLoader(u_ds, batch_size=conf.flexmatch.u_batch_size, sampler=u_sampler, drop_last=True,
                               num_workers=conf.training.u_num_workers, pin_memory=True, persistent_workers=conf.training.u_num_workers > 0)

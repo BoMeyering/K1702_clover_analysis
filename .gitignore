@@ -162,6 +162,7 @@ data/raw/images/*.jpg
 data/raw/mat_files/*.mat
 data/raw/labelbox_hq/
 data/processed_hq/
+data/SAM3_mask/
 wandb/
 
 outputs/*

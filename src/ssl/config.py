@@ -44,6 +44,8 @@ class LossCriterion(Enum):
 class Images:
     resize: List[int] = field(default_factory=lambda: [1024, 1024])   # model input (H, W)
     decode_reduction: int = 2   # JPEGs are decoded at 1/n resolution (1, 2, 4 or 8); 5184x3456 -> 2592x1728 at 2
+    crop_ratio: List[float] = field(default_factory=lambda: [1.2, 1.8])    # RandomResizedCrop w/h range (3:2 field images)
+    crop_scale: List[float] = field(default_factory=lambda: [0.35, 1.0])   # RandomResizedCrop area range
 
 
 @dataclass
@@ -65,7 +67,7 @@ class ProxyEval:
 class Data:
     image_dir: str = 'data/processed/images'
     hq_target_dir: str = 'data/processed_hq/targets'
-    split_csv: str = 'data/data_split.csv'
+    split_csv: Optional[str] = 'data/data_split.csv'      # null -> every .jpg in image_dir (no proxy split possible)
     holdout_ids: List[str] = field(default_factory=list)   # HQ images held out for validation (never trained on)
     exclude_ids: List[str] = field(default_factory=list)   # images to drop from every pool
     unlabeled_exclude_proxy: bool = False                  # True -> keep proxy-eval images out of the unlabeled pool

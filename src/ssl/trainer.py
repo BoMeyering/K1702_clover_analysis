@@ -105,11 +105,14 @@ class FlexMatchSegTrainer:
             self.palette[v['class_idx']] = v['rgb']
 
         # HQ class index -> SAM class index, for proxy evaluation and pseudo-label diagnostics
+        # (unused when the dataset has no proxy masks, e.g. sainfoin; unmapped classes go to IGNORE_INDEX)
         proxy = conf.data.proxy
         self.sam_classes = list(proxy.sam_classes)
         hq_to_sam = torch.full((256,), IGNORE_INDEX, dtype=torch.long)
         for name, v in mapping.items():
-            hq_to_sam[v['class_idx']] = proxy.class_map[name]
+            if proxy.enabled and name not in proxy.class_map:
+                raise KeyError(f"data.proxy.class_map has no entry for HQ class '{name}'")
+            hq_to_sam[v['class_idx']] = proxy.class_map.get(name, IGNORE_INDEX)
         self.hq_to_sam = hq_to_sam.to(self.device)
 
         self.thresholder = FlexMatchThreshold(
@@ -242,7 +245,9 @@ class FlexMatchSegTrainer:
 
         dist.barrier()
         # Every rank computes the same meters in the same order (compute() is a collective under DDP)
-        keys = ('loss', 'l_loss', 'u_loss') + (('conf_frac', 'pl_acc_conf', 'pl_acc_all') if ssl else ())
+        keys = ('loss', 'l_loss', 'u_loss') + (('conf_frac',) if ssl else ())
+        if ssl and self.conf.data.sam_diagnostics and self.conf.data.proxy.enabled:
+            keys += ('pl_acc_conf', 'pl_acc_all')
         logs = {}
         for k in keys:
             v = to_float(self.meters[k].compute())   # nan if no rank updated it

@@ -24,10 +24,11 @@ IMAGENET_STD = (0.229, 0.224, 0.225)
 CROP_RATIO = (1.2, 1.8)
 
 
-def get_geometric_transforms(resize: Tuple[int, int], scale: Tuple[float, float] = (0.35, 1.0)) -> A.Compose:
+def get_geometric_transforms(resize: Tuple[int, int], scale: Tuple[float, float] = (0.35, 1.0),
+                             ratio: Tuple[float, float] = CROP_RATIO) -> A.Compose:
     """Shared geometry for labeled images and for both views of unlabeled images (uint8 in, uint8 out)."""
     return A.Compose([
-        A.RandomResizedCrop(size=tuple(resize), scale=scale, ratio=CROP_RATIO, p=1.0),
+        A.RandomResizedCrop(size=tuple(resize), scale=tuple(scale), ratio=tuple(ratio), p=1.0),
         A.HorizontalFlip(p=0.5),
         A.VerticalFlip(p=0.5),
     ], additional_targets={'target': 'mask'})
