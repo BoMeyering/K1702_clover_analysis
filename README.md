@@ -5,19 +5,66 @@ Authors
 - [Mirza Sakiroglu](https://github.com/MirzaSakiroglu)
 
 ## Environment Setup
-Create a new virtual environment using your favorite (venv, conda, pyenv, etc.)
-Install all dependencies
+This project uses [uv](https://docs.astral.sh/uv/) to manage Python and dependencies. Install uv, then from the repo root:
 ```
-$ pip install -r requirements
+$ uv sync
 ```
+This creates `.venv/` with Python 3.12 and the exact versions pinned in `uv.lock`. PyTorch is installed from the CUDA 12.8 index (required for RTX 50xx / Blackwell GPUs).
+
+Optional extras for the sub-pipelines:
+```
+$ uv sync --extra quadrat-detection   # EfficientDet / Lightning (src/quadrat_detection)
+$ uv sync --extra mask-generation     # Segment Anything (src/mask_generation)
+$ uv sync --all-extras                # everything
+```
+Add or remove dependencies with `uv add <pkg>` / `uv remove <pkg>` so `pyproject.toml` and `uv.lock` stay in sync.
 
 ## Training Scripts
-You can directly train the models in your environment by calling them directly
+Run scripts through uv (or activate `.venv` with `source .venv/bin/activate` and call `python` directly):
 ```
-$ python train_object_detection_model.py
-$ python train_segmentation_model.py
+$ uv run train_object_detection_model.py
+$ uv run train_segmentation_model.py
 ```
 The top k=5 best model runs (based on the validation loss) will be stored in `checkpoints`.
+
+## `k1702` CLI
+`uv sync` installs a `k1702` command (defined in `src/cli.py`) for training and prediction with the `src/ssl` models.
+
+**Train** — uses every visible GPU by default and launches `torchrun` itself when there is more than one:
+```
+$ uv run k1702 train -c configs/flexmatch_sainfoin.yaml                     # all GPUs
+$ uv run k1702 train -c configs/flexmatch_sainfoin.yaml --gpus 1            # one GPU, no torchrun
+$ uv run k1702 train -c configs/supervised_sainfoin.yaml --devices 1        # pick GPUs (sets CUDA_VISIBLE_DEVICES)
+$ uv run k1702 train -c configs/flexmatch_sainfoin.yaml training.epochs=5 wandb.mode=disabled   # config overrides
+$ uv run k1702 train -c configs/flexmatch_sainfoin.yaml --dry-run           # print the torchrun command
+```
+
+**Predict** — rebuilds the model from the config stored in the checkpoint; every output is at the input image's full resolution:
+```
+$ uv run k1702 predict checkpoints/ssl/<run>/<run>_epoch_55_fitness-1.608057.pth data/raw/sainfoin_leaves/images -o outputs/predictions
+```
+Writes `masks/<stem>.png` (class indices), `color/<stem>.png`, `overlay/<stem>.jpg` and `class_areas.csv` (pixel count and fraction per class). Useful flags: `--tta` (flip averaging), `--weights model` (raw instead of EMA weights), `--save mask` (skip the renders), `--alpha`, `--overlay-skip`, `-b/--batch-size`. See `uv run k1702 predict --help`.
+
+## Semi-Supervised Training (FlexMatch on the HQ masks)
+Tests how far 10 hand-drawn, high-quality masks go when every other image is used unlabeled. The code lives in `src/ssl/` and is ported from the `pgcview_v2_training_framework` FlexMatch trainer.
+
+1. Download the finished Labelbox labels and rasterize them (kept separate from the SAM masks in `data/processed/targets`):
+```
+$ uv sync --all-extras
+$ uv run scripts/download_labelbox_export.py   # needs LABELBOX_API_KEY -> data/raw/labelbox_hq/
+$ uv run scripts/build_hq_targets.py           # -> data/processed_hq/targets/, classes in metadata/hq_target_mapping.json
+```
+2. Train FlexMatch and the supervised-only baseline (same labeled set, holdout, schedule and evaluation):
+```
+$ uv run k1702 train -c configs/flexmatch_hq10.yaml
+$ uv run k1702 train -c configs/supervised_hq10.yaml
+```
+Any config value can be overridden on the command line, e.g. `training.epochs=5 wandb.mode=disabled`. All visible GPUs are used by default; pass `--gpus 1` for a single-GPU run.
+
+- **Labeled:** the HQ images minus `data.holdout_ids` (2 held out by default). **Unlabeled:** every other image (1,125).
+- **Evaluation:** the HQ holdout (6 classes, EMA weights, scored at decoded resolution) and, every few epochs, agreement with the old SAM masks on the `val` split with predictions collapsed to soil/quadrat/clover. The SAM masks are never used as training targets; they are also used to score pseudo-label accuracy during training (logged as `train/pl_acc_*`).
+- **Thresholds:** per-class FlexMatch thresholds from a running, DDP-synchronised learning status. `flexmatch.normalize: ratio` (default) measures each class's confidence relative to how often it is predicted, so rare-by-area classes like `clover_stems` are not treated as unlearned; `normalize: count` + `status: batch` reproduces the pgcview behaviour.
+- Checkpoints (raw + EMA weights, FlexMatch state, config) go to `checkpoints/ssl/<run>/`; metrics, per-class thresholds and prediction panels go to wandb (`k1702_clover_ssl`).
 ## Dataset Overview :open_file_folder:
 The Perennial Legumes Program at The Land Institute cultivated XXXX unique accessions from the USDA National Plant Germplasm System (NPGS) in the summer of 2017. Each plant was cultivated as a single plant plot. Plots were imaged with a Canon DLSR camera at least one time during the season. Clover plant were framed by a standard sampling quadrat constructed of 3/4" Schedule 40 PVC pipe with the following dimensions:
 * OD (HxW) = 18"x18"
@@ -133,7 +180,8 @@ src/
 .gitignore
 LICENSE
 README.md
-requirements.txt
+pyproject.toml
+uv.lock
 train_object_detection_model.py
 train_segmentation_model.py
 ```

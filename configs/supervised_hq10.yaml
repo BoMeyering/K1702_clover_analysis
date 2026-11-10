@@ -1,0 +1,32 @@
+# Supervised-only baseline: identical to flexmatch_hq10.yaml (same labeled set, holdout, schedule,
+# steps per epoch and evaluation) but the unlabeled images are never used.
+# Run:  uv run k1702 train -c configs/supervised_hq10.yaml
+model_run: supervised_hq10_segformer_mitb1
+
+data:
+  holdout_ids: [Ta01947_20170608, Ta01949_20170703]
+
+model:
+  architecture: SEGFORMER
+  config:
+    encoder_name: mit_b1
+    classes: 6
+
+optimizer:
+  optimizer_params:
+    lr: 0.0003
+
+scheduler:
+  gamma: 0.98
+
+loss:
+  name: TVMFDICELOSS
+  smooth: 0.05
+  kappa: 16
+
+flexmatch:
+  enabled: false
+
+training:
+  epochs: 100
+  steps_per_epoch: 140   # match the FlexMatch run on 2 GPUs (1125 unlabeled / 2 ranks / batch 4)

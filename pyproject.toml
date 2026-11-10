@@ -1,0 +1,101 @@
+[project]
+name = "k1702-clover-analysis"
+version = "0.1.0"
+description = "Semantic segmentation and object detection pipeline for analyzing images of field-grown Kura clover."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.12"
+dependencies = [
+    "albumentations>=2.0.8",
+    "numpy>=2.2.5",
+    "omegaconf>=2.3.0",
+    "opencv-python>=4.11.0.86,<5",
+    "pandas>=2.2.3",
+    "pillow>=11.2.1",
+    "polars>=1.28.1",
+    "pycocotools>=2.0.8",            # backend for torchmetrics MeanAveragePrecision
+    "pyyaml>=6.0.2",
+    "scikit-learn>=1.6",             # data/train_val_split.py
+    "scipy>=1.15.2",
+    "segmentation-models-pytorch>=0.5.0",
+    "tensorboard>=2.19.0",
+    "torch>=2.7.0",
+    "torchmetrics>=1.7.3",
+    "torchvision>=0.22.0",
+    "tqdm>=4.67.1",
+    "wandb>=0.21",
+]
+
+[project.scripts]
+k1702 = "src.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[project.optional-dependencies]
+# src/quadrat_detection (EfficientDet + Lightning)
+quadrat-detection = [
+    "effdet>=0.4.1",
+    "ensemble-boxes>=1.0.9",
+    "fastcore>=1.8.1",
+    "ndjson>=0.3.1",
+    "objdetecteval",
+    "pytorch-lightning>=2.5",
+]
+# Pulling annotations from Labelbox (scripts/download_labelbox_export.py)
+labelbox = [
+    "labelbox>=7.0.0",
+]
+# src/mask_generation (Segment Anything)
+mask-generation = [
+    "ndjson>=0.3.1",
+    "segment-anything",
+    "wget>=3.2",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.29",
+    "ipython>=9.4.0",
+    "matplotlib>=3.10.1",
+    "ruff>=0.17.4",
+]
+
+[tool.uv]
+package = true   # installs the `k1702` CLI (editable, so src/ changes apply without re-syncing)
+# albumentations/albucore depend on opencv-python-headless, which conflicts with
+# opencv-python (both provide `cv2`). We need the GUI build for cv2.imshow, so
+# disable the headless variant.
+override-dependencies = ["opencv-python-headless; sys_platform == 'never'"]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }]
+torchvision = [{ index = "pytorch-cu128", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }]
+segment-anything = { git = "https://github.com/facebookresearch/segment-anything.git" }
+objdetecteval = { git = "https://github.com/alexhock/object-detection-metrics.git" }
+
+# CUDA 12.8 wheels — required for Blackwell GPUs (RTX 50xx).
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+# objdetecteval's setup.py imports pkg_resources (removed in setuptools 81).
+[tool.uv.extra-build-dependencies]
+objdetecteval = ["setuptools<81"]
+
+[tool.ruff]
+# Legacy sub-pipelines and exploratory notebooks are not maintained to lint standards.
+extend-exclude = ["src/quadrat_detection", "src/mask_generation", "*.ipynb"]
+
+[tool.ruff.lint]
+ignore = [
+    "BLE001",  # broad `except Exception` is deliberate around optional logging / DDP setup
+    "B008",    # function calls in defaults (dataclass field factories, transform defaults)
+    "TRY004",  # ValueError vs TypeError for config type checks
+    "C408",    # dict() calls are fine
+]

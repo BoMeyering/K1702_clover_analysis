@@ -1,0 +1,49 @@
+# Supervised-only baseline: identical to flexmatch_sainfoin.yaml (same labeled set, holdout, schedule,
+# steps per epoch and evaluation) but the unlabeled scans are never used.
+# Run:  uv run k1702 train -c configs/supervised_sainfoin.yaml
+model_run: supervised_sainfoin_segformer_mitb1
+
+images:
+  resize: [1376, 1024]
+  crop_ratio: [0.6, 0.9]
+  crop_scale: [0.35, 1.0]
+
+data:
+  image_dir: data/raw/sainfoin_leaves/images
+  hq_target_dir: data/processed_hq/sainfoin_leaves/targets
+  split_csv: null
+  holdout_ids: [TLI_E+K_923, TLI_SGF0898_002]
+  sam_diagnostics: false
+  proxy:
+    enabled: false
+
+metadata:
+  target_mapping_path: metadata/sainfoin_target_mapping.json
+
+model:
+  architecture: SEGFORMER
+  config:
+    encoder_name: mit_b1
+    classes: 4
+
+optimizer:
+  optimizer_params:
+    lr: 0.0003
+
+scheduler:
+  gamma: 0.98
+
+loss:
+  name: TVMFDICELOSS
+  smooth: 0.05
+  kappa: 16
+
+flexmatch:
+  enabled: false
+
+training:
+  epochs: 100
+  steps_per_epoch: 78   # match the FlexMatch run on 2 GPUs (625 unlabeled / 2 ranks / batch 4)
+
+wandb:
+  project: k1702_sainfoin_ssl

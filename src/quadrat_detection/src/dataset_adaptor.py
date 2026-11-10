@@ -1,8 +1,8 @@
 from pathlib import Path
 
+import numpy as np
 from PIL.Image import open
 
-import numpy as np
 
 class QuadratDatasetAdaptor:
     def __init__(self, images_dir_path, annotations_dataframe):
@@ -22,7 +22,7 @@ class QuadratDatasetAdaptor:
         class_labels = np.ones(len(pascal_bboxes))
 
         return image, pascal_bboxes, class_labels, index
-    
+
     # def show_image(self, index):
     #     image, bboxes, class_labels, image_id = self.get_image_and_labels_by_idx(index)
     #     print(f"image_id: {image_id}")

@@ -1,0 +1,6 @@
+{
+    "background": {"class_idx": 0, "rgb": [0, 0, 0]},
+    "leaflet": {"class_idx": 1, "rgb": [40, 200, 40]},
+    "petiole": {"class_idx": 2, "rgb": [255, 0, 255]},
+    "tag": {"class_idx": 3, "rgb": [0, 120, 255]}
+}

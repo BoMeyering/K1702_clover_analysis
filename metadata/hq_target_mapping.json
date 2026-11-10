@@ -1,0 +1,8 @@
+{
+    "soil": {"class_idx": 0, "rgb": [120, 85, 50]},
+    "quadrat": {"class_idx": 1, "rgb": [255, 255, 255]},
+    "clover_leaves": {"class_idx": 2, "rgb": [40, 200, 40]},
+    "clover_stems": {"class_idx": 3, "rgb": [255, 0, 255]},
+    "other_veg": {"class_idx": 4, "rgb": [255, 200, 0]},
+    "person": {"class_idx": 5, "rgb": [0, 120, 255]}
+}

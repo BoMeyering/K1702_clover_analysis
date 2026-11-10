@@ -1,0 +1,96 @@
+# FlexMatch on the sainfoin leaf scans: 8 HQ Labelbox images labeled (2 held out for evaluation),
+# the other 625 scans unlabeled. Same scheme as flexmatch_hq10.yaml, but there are no SAM proxy masks
+# for this dataset, so proxy evaluation and pseudo-label diagnostics are off and checkpoints are
+# selected on the HQ holdout alone.
+# Prereq:  uv run scripts/build_sainfoin_mat_targets.py      (writes the .png targets read here)
+# Run:     uv run k1702 train -c configs/flexmatch_sainfoin.yaml
+model_run: flexmatch_sainfoin_segformer_mitb1
+
+device: cuda
+logging_level: INFO
+
+images:
+  # Portrait scans (3400x4680 SGF, 2040x2807 E+K; W/H ~0.73). H x W, both divisible by 32.
+  # Petioles are ~11 px wide at full res -> ~3 px here; 1024x768 would leave ~2 px.
+  resize: [1376, 1024]
+  decode_reduction: 2
+  crop_ratio: [0.6, 0.9]      # w/h around the 0.73 page aspect
+  crop_scale: [0.35, 1.0]
+
+data:
+  image_dir: data/raw/sainfoin_leaves/images
+  hq_target_dir: data/processed_hq/sainfoin_leaves/targets
+  split_csv: null             # no split file: every .jpg in image_dir is a candidate
+  # One E+K (lower-res) and one SGF scan, both with all four classes. Set to [] to train on all 10.
+  holdout_ids: [TLI_E+K_923, TLI_SGF0898_002]
+  exclude_ids: []
+  sam_diagnostics: false
+  proxy:
+    enabled: false
+
+metadata:
+  target_mapping_path: metadata/sainfoin_target_mapping.json
+
+directories:
+  checkpoint_dir: checkpoints/ssl
+  log_dir: logs
+
+training:
+  epochs: 100
+  steps_per_epoch: null      # null -> one pass over the unlabeled pool per rank (625 / 2 / 4 = 78 on 2 GPUs)
+  amp: true
+  seed: 42
+
+model:
+  architecture: SEGFORMER
+  config:
+    encoder_name: mit_b1
+    encoder_depth: 5
+    encoder_weights: imagenet
+    in_channels: 3
+    classes: 4
+
+optimizer:
+  name: AdamW
+  weight_decay: 0.001
+  filter_bias_and_bn: true
+  ema: true
+  ema_decay: 0.99
+  optimizer_params:
+    lr: 0.0003
+
+scheduler:
+  name: ExponentialLR
+  gamma: 0.98
+
+loss:
+  name: TVMFDICELOSS
+  reduction: mean
+  smooth: 0.05
+  kappa: 16
+
+flexmatch:
+  enabled: true
+  tau: 0.95
+  tau_min: 0.0
+  mapping: convex
+  warmup: true
+  status: ema
+  normalize: ratio
+  momentum: 0.99
+  lam: 1.0
+  scale_by_conf_fraction: true
+  unsup_warmup_epochs: 5
+  cutmix_p: 0.5
+  l_batch_size: 2
+  u_batch_size: 4
+
+checkpoint:
+  top_k: 5
+
+wandb:
+  enabled: true
+  mode: online
+  entity: oxbowsolutions
+  project: k1702_sainfoin_ssl
+  num_vis_images: 2

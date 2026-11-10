@@ -1,0 +1,94 @@
+# FlexMatch: 8 HQ Labelbox images labeled (2 held out for evaluation), all other images unlabeled.
+# Run:  uv run k1702 train -c configs/flexmatch_hq10.yaml
+model_run: flexmatch_hq10_segformer_mitb1
+
+device: cuda
+logging_level: INFO
+
+images:
+  resize: [1024, 1024]       # same input size as the old quadrat/clover inference pipeline
+  decode_reduction: 2
+
+data:
+  image_dir: data/processed/images
+  hq_target_dir: data/processed_hq/targets
+  split_csv: data/data_split.csv
+  # One image per capture date, both from accessions with a single HQ image. Set to [] to train on all 10.
+  holdout_ids: [Ta01947_20170608, Ta01949_20170703]
+  exclude_ids: []
+  unlabeled_exclude_proxy: false   # true -> proxy eval images are never seen, even unlabeled
+  sam_diagnostics: true            # score pseudo-labels against the old SAM masks (logging only)
+  proxy:
+    enabled: true
+    target_dir: data/processed/targets
+    split: val
+    every_n_epochs: 5
+    sam_classes: [soil, quadrat, clover]
+    class_map: {soil: 0, quadrat: 1, clover_leaves: 2, clover_stems: 2, other_veg: 0, person: 0}
+
+metadata:
+  target_mapping_path: metadata/hq_target_mapping.json
+
+directories:
+  checkpoint_dir: checkpoints/ssl
+  log_dir: logs
+
+training:
+  epochs: 100
+  steps_per_epoch: null      # null -> one pass over the unlabeled pool per rank
+  amp: true
+  seed: 42
+
+model:
+  architecture: SEGFORMER
+  config:
+    encoder_name: mit_b1
+    encoder_depth: 5
+    encoder_weights: imagenet
+    in_channels: 3
+    classes: 6
+
+optimizer:
+  name: AdamW
+  weight_decay: 0.001
+  filter_bias_and_bn: true
+  ema: true
+  ema_decay: 0.99
+  optimizer_params:
+    lr: 0.0003
+
+scheduler:
+  name: ExponentialLR
+  gamma: 0.98
+
+loss:
+  name: TVMFDICELOSS
+  reduction: mean
+  smooth: 0.05
+  kappa: 16
+
+flexmatch:
+  enabled: true
+  tau: 0.95
+  tau_min: 0.0
+  mapping: convex
+  warmup: true
+  status: ema
+  normalize: ratio
+  momentum: 0.99
+  lam: 1.0
+  scale_by_conf_fraction: true
+  unsup_warmup_epochs: 5
+  cutmix_p: 0.5
+  l_batch_size: 2
+  u_batch_size: 4
+
+checkpoint:
+  top_k: 5
+
+wandb:
+  enabled: true
+  mode: online
+  entity: oxbowsolutions
+  project: k1702_clover_ssl
+  num_vis_images: 2

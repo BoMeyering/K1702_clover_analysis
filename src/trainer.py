@@ -3,17 +3,19 @@ src.trainer.py
 Trainer Classes
 BoMeyering 2025
 """
-import os
+
+import contextlib
 import logging
-import time
-import torch
-import torch.nn.functional as F
-from tqdm import tqdm
+import os
 from abc import ABC, abstractmethod
-from src.eval import AverageMeter, AverageMeterSet
-from src.callbacks import ModelCheckpoint
-from src.metrics import ObjectDetectionMetricLogger, SegmentationMetricLogger
+
+import torch
 import torch.distributed as dist
+from tqdm import tqdm
+
+from src.callbacks import ModelCheckpoint
+from src.eval import AverageMeter, AverageMeterSet
+from src.metrics import ObjectDetectionMetricLogger, SegmentationMetricLogger
 
 
 class BaseTrainer(ABC):
@@ -27,7 +29,7 @@ class BaseTrainer(ABC):
         optimizer,
         scheduler,
         epochs,
-        checkpoint_dir
+        checkpoint_dir,
     ):
         self.model = model
         self.device = device
@@ -37,7 +39,9 @@ class BaseTrainer(ABC):
         self.scheduler = scheduler
         self.epochs = epochs
         self.logger = logging.getLogger()
-        self.checkpoint = ModelCheckpoint(checkpoint_dir=checkpoint_dir, model_run_name=model_run_name)
+        self.checkpoint = ModelCheckpoint(
+            checkpoint_dir=checkpoint_dir, model_run_name=model_run_name
+        )
         self.meters = AverageMeterSet()
 
         # Distributed rank/world flags & master check
@@ -46,31 +50,36 @@ class BaseTrainer(ABC):
                 self.rank = dist.get_rank()
                 self.world_size = dist.get_world_size()
             except Exception:
-                self.rank = int(os.environ.get("RANK", 0))
-                self.world_size = int(os.environ.get("WORLD_SIZE", 1))
+                self.rank = int(os.environ.get("RANK", "0"))
+                self.world_size = int(os.environ.get("WORLD_SIZE", "1"))
         else:
-            self.rank = int(os.environ.get("RANK", 0))
-            self.world_size = int(os.environ.get("WORLD_SIZE", 1))
-        self.is_master = (self.rank == 0)
+            self.rank = int(os.environ.get("RANK", "0"))
+            self.world_size = int(os.environ.get("WORLD_SIZE", "1"))
+        self.is_master = self.rank == 0
 
     def train(self):
-        """ Main train method """
+        """Main train method"""
         self.logger.info(f"Training model for {self.epochs} epochs.")
         for epoch in range(1, self.epochs + 1):
             # If DistributedSampler is used, set epoch for shuffling
-            try:
-                if hasattr(self.train_loader, "sampler") and isinstance(self.train_loader.sampler, torch.utils.data.distributed.DistributedSampler):
+            with contextlib.suppress(Exception):
+                if hasattr(self.train_loader, "sampler") and isinstance(
+                    self.train_loader.sampler,
+                    torch.utils.data.distributed.DistributedSampler,
+                ):
                     self.train_loader.sampler.set_epoch(epoch)
-            except Exception:
-                pass
 
             self._train_epoch(epoch)
             self._val_epoch(epoch)
 
             logs = {
                 "epoch": epoch,
-                "train_loss": torch.tensor(self.meters['train_loss'].avg, device=self.device),
-                "val_loss": torch.tensor(self.meters['val_loss'].avg, device=self.device),
+                "train_loss": torch.tensor(
+                    self.meters["train_loss"].avg, device=self.device
+                ),
+                "val_loss": torch.tensor(
+                    self.meters["val_loss"].avg, device=self.device
+                ),
                 "model_state_dict": self.model.state_dict(),
             }
 
@@ -118,10 +127,14 @@ class SegTrainer(BaseTrainer):
         """
         super().__init__(*args, **kwargs)
         self.criterion = criterion
-        self.seg_metrics = SegmentationMetricLogger(num_classes=num_classes, device=self.device)
+        self.seg_metrics = SegmentationMetricLogger(
+            num_classes=num_classes, device=self.device
+        )
 
         if use_amp is None:
-            self.use_amp = torch.cuda.is_available() and ("cuda" in str(self.device).lower())
+            self.use_amp = torch.cuda.is_available() and (
+                "cuda" in str(self.device).lower()
+            )
         else:
             self.use_amp = bool(use_amp)
 
@@ -155,12 +168,12 @@ class SegTrainer(BaseTrainer):
                 loss_value = train_loss.item()
             except Exception:
                 loss_value = float(train_loss)
-            self.meters.update('train_loss', loss_value)
+            self.meters.update("train_loss", loss_value)
 
             if self.is_master:
                 lr = self.scheduler.get_last_lr()[0] if self.scheduler else 0.0
                 p_bar.set_description(
-                    f"Train Epoch: {epoch}/{self.epochs}. Iter: {batch_idx+1}/{len(self.train_loader)}. "
+                    f"Train Epoch: {epoch}/{self.epochs}. Iter: {batch_idx + 1}/{len(self.train_loader)}. "
                     f"LR: {lr:.6f}. Loss: {loss_value:.6f}"
                 )
 
@@ -191,21 +204,23 @@ class SegTrainer(BaseTrainer):
                 val_value = val_loss.item()
             except Exception:
                 val_value = float(val_loss)
-            self.meters.update('val_loss', val_value)
+            self.meters.update("val_loss", val_value)
 
             if self.is_master:
                 lr = self.scheduler.get_last_lr()[0] if self.scheduler else 0.0
                 p_bar.set_description(
-                    f"Val Epoch: {epoch}/{self.epochs}. Iter: {batch_idx+1}/{len(self.val_loader)}. "
+                    f"Val Epoch: {epoch}/{self.epochs}. Iter: {batch_idx + 1}/{len(self.val_loader)}. "
                     f"LR: {lr:.6f}. Val Loss: {val_value:.6f}"
                 )
 
         # Compute metrics
         avg_metrics, mc_metrics = self.seg_metrics.compute()
         if self.is_master:
-            f1_avg = avg_metrics.get('f1_score', torch.tensor(0., device=self.device))
-            jaccard_avg = avg_metrics.get('jaccard_index', torch.tensor(0., device=self.device))
-            miou_avg = avg_metrics.get('mIOU', torch.tensor(0., device=self.device))
+            f1_avg = avg_metrics.get("f1_score", torch.tensor(0.0, device=self.device))
+            jaccard_avg = avg_metrics.get(
+                "jaccard_index", torch.tensor(0.0, device=self.device)
+            )
+            miou_avg = avg_metrics.get("mIOU", torch.tensor(0.0, device=self.device))
 
             self.logger.info(
                 f"[Val] F1(avg): {f1_avg.item():.4f}, "
@@ -213,18 +228,24 @@ class SegTrainer(BaseTrainer):
                 f"mIoU(avg): {miou_avg.item():.4f}"
             )
 
-            mc_f1 = mc_metrics.get('f1_score', torch.tensor([])).tolist()
-            mc_jaccard = mc_metrics.get('jaccard_index', torch.tensor([])).tolist()
-            mc_miou = mc_metrics.get('mIOU', torch.tensor([])).tolist()
+            mc_f1 = mc_metrics.get("f1_score", torch.tensor([])).tolist()
+            mc_jaccard = mc_metrics.get("jaccard_index", torch.tensor([])).tolist()
+            mc_miou = mc_metrics.get("mIOU", torch.tensor([])).tolist()
 
-            self.logger.info(f"[Val] F1(per-class): {', '.join(f'{v:.4f}' for v in mc_f1)}")
-            self.logger.info(f"[Val] Jaccard(per-class): {', '.join(f'{v:.4f}' for v in mc_jaccard)}")
-            self.logger.info(f"[Val] mIoU(per-class): {', '.join(f'{v:.4f}' for v in mc_miou)}")
+            self.logger.info(
+                f"[Val] F1(per-class): {', '.join(f'{v:.4f}' for v in mc_f1)}"
+            )
+            self.logger.info(
+                f"[Val] Jaccard(per-class): {', '.join(f'{v:.4f}' for v in mc_jaccard)}"
+            )
+            self.logger.info(
+                f"[Val] mIoU(per-class): {', '.join(f'{v:.4f}' for v in mc_miou)}"
+            )
 
         if dist.is_initialized():
             dist.barrier()
 
-        return self.meters['val_loss'].avg
+        return self.meters["val_loss"].avg
 
     @torch.no_grad()
     def _val_step(self, batch):
@@ -248,6 +269,7 @@ class ObjTrainer(BaseTrainer):
 
     def _log_metric(self, prefix: str, key: str, val):
         import torch
+
         if isinstance(val, dict):
             for kk, vv in val.items():
                 self._log_metric(prefix, f"{key}/{kk}", vv)
@@ -279,7 +301,7 @@ class ObjTrainer(BaseTrainer):
             train_loss = self._train_step(batch)
             train_loss.backward()
             self.optimizer.step()
-            self.meters.update('train_loss', train_loss.item())
+            self.meters.update("train_loss", train_loss.item())
 
             if self.is_master:
                 p_bar.set_description(
@@ -291,7 +313,7 @@ class ObjTrainer(BaseTrainer):
             p_bar.close()
 
     def _train_step(self, batch):
-        imgs, targets, img_ids = batch
+        imgs, targets, _ = batch
         imgs = [img.to(self.device) for img in imgs]
         targets = [{k: v.to(self.device) for k, v in t.items()} for t in targets]
 
@@ -304,10 +326,10 @@ class ObjTrainer(BaseTrainer):
         self.model.eval()
         self.obj_metrics.reset()
 
-        if 'val_loss' not in self.meters.meters:
-            self.meters.meters['val_loss'] = AverageMeter()
+        if "val_loss" not in self.meters.meters:
+            self.meters.meters["val_loss"] = AverageMeter()
         else:
-            self.meters['val_loss'].reset()
+            self.meters["val_loss"].reset()
 
         if self.is_master:
             self.logger.info(f"Validating epoch {epoch}")
@@ -319,7 +341,7 @@ class ObjTrainer(BaseTrainer):
         for batch_idx in range(len(self.val_loader)):
             batch = next(iter_loader)
             val_loss = self._val_step(batch)
-            self.meters.update('val_loss', val_loss)
+            self.meters.update("val_loss", val_loss)
 
             if self.is_master:
                 p_bar.set_description(
@@ -329,7 +351,9 @@ class ObjTrainer(BaseTrainer):
                 p_bar.update()
         if self.is_master:
             p_bar.close()
-            self.logger.info(f"Epoch {epoch}: Avg Validation Loss: {self.meters['val_loss'].avg:.6f}")
+            self.logger.info(
+                f"Epoch {epoch}: Avg Validation Loss: {self.meters['val_loss'].avg:.6f}"
+            )
 
         if torch.distributed.is_initialized():
             torch.distributed.barrier()
@@ -343,8 +367,7 @@ class ObjTrainer(BaseTrainer):
         if torch.distributed.is_initialized():
             torch.distributed.barrier()
 
-        return self.meters['val_loss'].avg
-
+        return self.meters["val_loss"].avg
 
     @torch.no_grad()
     def _val_step(self, batch):
@@ -371,9 +394,8 @@ class ObjTrainer(BaseTrainer):
         return loss.item()
 
 
-
 def move_to_device(obj, device):
-    """ Recursive function to move targets to device """
+    """Recursive function to move targets to device"""
     if torch.is_tensor(obj):
         return obj.to(device)
     elif isinstance(obj, list):
