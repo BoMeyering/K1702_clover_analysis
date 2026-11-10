@@ -6,12 +6,9 @@ BoMeyering 2025
 
 import logging
 import logging.handlers
-import torch
 import sys
-import omegaconf
 from pathlib import Path
-from omegaconf import OmegaConf
-from contextlib import contextmanager
+
 
 def setup_loggers(conf):
     """
@@ -20,12 +17,14 @@ def setup_loggers(conf):
     Args:
         args (argparse.Namespace): arguments object from the configuration file.
     """
-    filename = conf.model_run + '.log'
+    filename = conf.model_run + ".log"
     filepath = Path(conf.directories.log_dir) / filename
 
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    file_handler = logging.handlers.RotatingFileHandler(filepath, 'a', 1000000, 3)
-    stream_handler = logging.StreamHandler(sys.stdout,)
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    file_handler = logging.handlers.RotatingFileHandler(filepath, "a", 1000000, 3)
+    stream_handler = logging.StreamHandler(
+        sys.stdout,
+    )
     file_handler.setFormatter(formatter)
     stream_handler.setFormatter(formatter)
 
@@ -36,9 +35,10 @@ def setup_loggers(conf):
 
     logging.getLogger("wandb").setLevel(logging.WARNING)
 
+
 def rank_log(main_process: bool, fn, *args, **kwargs):
     """Log a message only on rank 0 process
-    
+
     Parameters:
     -----------
         main_process : bool
@@ -52,4 +52,3 @@ def rank_log(main_process: bool, fn, *args, **kwargs):
     """
     if main_process:
         fn(*args, **kwargs)
-

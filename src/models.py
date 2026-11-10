@@ -4,14 +4,21 @@ Models Stub script
 BoMeyering 2025
 """
 
-import torch
 import inspect
+
 import segmentation_models_pytorch as smp
+import torch
 from torchvision.models.detection import fasterrcnn_resnet50_fpn
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 
 
-def create_fasterrcnn_model(architecture: str, num_classes: int, max_det_per_image: int, pretrained: bool=True, **kwargs):
+def create_fasterrcnn_model(
+    architecture: str,
+    num_classes: int,
+    max_det_per_image: int,
+    pretrained: bool = True,
+    **kwargs,
+):
     """Create a pytorch FasterRCNN model
 
     Parameters:
@@ -21,7 +28,7 @@ def create_fasterrcnn_model(architecture: str, num_classes: int, max_det_per_ima
         num_classes : int
 
         max_det_per_image : int
-            
+
         pretrained : bool, optional
             _description_. Defaults to True.
 
@@ -32,7 +39,7 @@ def create_fasterrcnn_model(architecture: str, num_classes: int, max_det_per_ima
     Returns:
     --------
         model : torch.nn.Module
-            An instantiated 
+            An instantiated
     """
     if architecture == "fasterrcnn_resnet50_fpn":
         model = fasterrcnn_resnet50_fpn(pretrained=pretrained)
@@ -46,9 +53,8 @@ def create_fasterrcnn_model(architecture: str, num_classes: int, max_det_per_ima
 
         return model
     else:
-        raise ValueError(
-            f"Unsupported architecture: {architecture}"
-        )
+        raise ValueError(f"Unsupported architecture: {architecture}")
+
 
 def create_smp_model(config: dict) -> torch.nn.Module:
     """Creates an smp Pytorch model
@@ -63,13 +69,17 @@ def create_smp_model(config: dict) -> torch.nn.Module:
     Returns:
         torch.nn.Module: A model as a pytorch module
     """
-    
-    if config['encoder_name'] not in smp.encoders.get_encoder_names():
-        raise ValueError(f"Encoder name {config['encoder_name']} is not one of the accepted encoders. Please select an encoder from {smp.encoders.get_encoder_names()}")
-    
+
+    if config["encoder_name"] not in smp.encoders.get_encoder_names():
+        raise ValueError(
+            f"Encoder name {config['encoder_name']} is not one of the accepted encoders. Please select an encoder from {smp.encoders.get_encoder_names()}"
+        )
+
     try:
-        model_class = getattr(smp, config['architecture'])
-        class_arguments = [name for name, param in inspect.signature(model_class).parameters.items()]
+        model_class = getattr(smp, config["architecture"])
+        class_arguments = [
+            name for name, param in inspect.signature(model_class).parameters.items()
+        ]
         model_args = {}
         for k, v in config.items():
             if k in class_arguments:
@@ -77,5 +87,7 @@ def create_smp_model(config: dict) -> torch.nn.Module:
         model = model_class(**model_args)
 
         return model
-    except AttributeError as e:
-        raise ValueError(f"Model architecture {config['architecture']} is not a valid SMP architecture.\nSelect one from 'smp._MODEL_ARCHITECTURES'")
+    except AttributeError:
+        raise ValueError(
+            f"Model architecture {config['architecture']} is not a valid SMP architecture.\nSelect one from 'smp._MODEL_ARCHITECTURES'"
+        )

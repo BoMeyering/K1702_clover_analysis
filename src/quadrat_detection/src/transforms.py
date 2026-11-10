@@ -1,8 +1,9 @@
-import torch
 import albumentations as A
+import numpy as np
+import torch
 from albumentations.pytorch.transforms import ToTensorV2
 from torch.utils.data import Dataset
-import numpy as np
+
 
 def get_train_transforms(target_img_size=512):
     return A.Compose(
@@ -32,10 +33,9 @@ def get_valid_transforms(target_img_size=512):
         ),
     )
 
+
 class EfficientDetDataset(Dataset):
-    def __init__(
-        self, dataset_adaptor, transforms=get_valid_transforms()
-    ):
+    def __init__(self, dataset_adaptor, transforms=get_valid_transforms()):
         self.ds = dataset_adaptor
         self.transforms = transforms
 

@@ -19,26 +19,30 @@ BoMeyering 2025
 """
 
 import math
-from typing import Optional, Tuple
 
 import torch
 import torch.distributed as dist
 
-MAPPINGS = ('convex', 'concave', 'linear')
+MAPPINGS = ("convex", "concave", "linear")
 
 
 def map_beta(beta: torch.Tensor, mapping: str) -> torch.Tensor:
     """Apply the FlexMatch mapping function M to normalised learning status in [0, 1]."""
-    if mapping == 'convex':
+    if mapping == "convex":
         return beta / (2.0 - beta)
-    if mapping == 'concave':
+    if mapping == "concave":
         return torch.log1p(beta) / math.log(2.0)
-    if mapping == 'linear':
+    if mapping == "linear":
         return beta
     raise ValueError(f"mapping must be one of {MAPPINGS}, got '{mapping}'")
 
 
-def class_beta(logits: torch.Tensor, tau: float = 0.85, mapping: str = 'linear', warmup: bool = True) -> torch.Tensor:
+def class_beta(
+    logits: torch.Tensor,
+    tau: float = 0.85,
+    mapping: str = "linear",
+    warmup: bool = True,
+) -> torch.Tensor:
     """Stateless, per-batch class beta (pgcview behaviour, raw confident counts). Returns mapped beta of shape (C,)."""
     if logits.ndim != 4:
         raise ValueError("Argument 'logits' should be a tensor of shape (N, C, H, W).")
@@ -55,7 +59,9 @@ def class_beta(logits: torch.Tensor, tau: float = 0.85, mapping: str = 'linear',
 
 
 @torch.no_grad()
-def get_pseudo_labels(tau_vector: torch.Tensor, logits_or_probs: torch.Tensor, probs: bool = False) -> Tuple[torch.Tensor, torch.Tensor]:
+def get_pseudo_labels(
+    tau_vector: torch.Tensor, logits_or_probs: torch.Tensor, probs: bool = False
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Hard pseudo-labels and the boolean mask of pixels whose confidence clears their class threshold."""
     if logits_or_probs.ndim != 4:
         raise ValueError(f"Expected (N, C, H, W), got {tuple(logits_or_probs.shape)}")
@@ -72,21 +78,21 @@ class FlexMatchThreshold:
         self,
         num_classes: int,
         tau: float = 0.95,
-        mapping: str = 'convex',
+        mapping: str = "convex",
         warmup: bool = True,
-        status: str = 'ema',
-        normalize: str = 'ratio',
+        status: str = "ema",
+        normalize: str = "ratio",
         momentum: float = 0.99,
         tau_min: float = 0.0,
-        device: str = 'cpu',
+        device: str = "cpu",
     ):
         if not 0 < tau <= 1:
             raise ValueError("tau must be in (0, 1]")
         if mapping not in MAPPINGS:
             raise ValueError(f"mapping must be one of {MAPPINGS}")
-        if status not in ('ema', 'batch'):
+        if status not in ("ema", "batch"):
             raise ValueError("status must be 'ema' or 'batch'")
-        if normalize not in ('ratio', 'count'):
+        if normalize not in ("ratio", "count"):
             raise ValueError("normalize must be 'ratio' or 'count'")
 
         self.num_classes = num_classes
@@ -100,9 +106,13 @@ class FlexMatchThreshold:
         self.device = device
 
         # Fractions of unlabeled pixels. FlexMatch starts with every sample "unused".
-        self.conf_frac = torch.zeros(num_classes, device=device)                  # confident & predicted as c
-        self.pred_frac = torch.full((num_classes,), 1.0 / num_classes, device=device)  # predicted as c
-        self.unused_frac = torch.ones((), device=device)                          # not confident
+        self.conf_frac = torch.zeros(
+            num_classes, device=device
+        )  # confident & predicted as c
+        self.pred_frac = torch.full(
+            (num_classes,), 1.0 / num_classes, device=device
+        )  # predicted as c
+        self.unused_frac = torch.ones((), device=device)  # not confident
         self.steps = 0
 
     @torch.no_grad()
@@ -111,21 +121,31 @@ class FlexMatchThreshold:
         max_probs, preds = probs.max(dim=1)
         conf = max_probs > self.tau
         n = torch.tensor(float(preds.numel()), device=probs.device)
-        stats = torch.cat([
-            torch.bincount(preds[conf], minlength=self.num_classes).float(),
-            torch.bincount(preds.reshape(-1), minlength=self.num_classes).float(),
-            (~conf).sum().float().reshape(1),
-            n.reshape(1),
-        ])
+        stats = torch.cat(
+            [
+                torch.bincount(preds[conf], minlength=self.num_classes).float(),
+                torch.bincount(preds.reshape(-1), minlength=self.num_classes).float(),
+                (~conf).sum().float().reshape(1),
+                n.reshape(1),
+            ]
+        )
         if dist.is_available() and dist.is_initialized():
             dist.all_reduce(stats, op=dist.ReduceOp.SUM)
 
         C = self.num_classes
         total = stats[-1].clamp_min(1.0)
-        conf_frac, pred_frac, unused_frac = stats[:C] / total, stats[C:2 * C] / total, stats[2 * C] / total
+        conf_frac, pred_frac, unused_frac = (
+            stats[:C] / total,
+            stats[C : 2 * C] / total,
+            stats[2 * C] / total,
+        )
 
-        if self.status == 'batch':
-            self.conf_frac, self.pred_frac, self.unused_frac = conf_frac, pred_frac, unused_frac
+        if self.status == "batch":
+            self.conf_frac, self.pred_frac, self.unused_frac = (
+                conf_frac,
+                pred_frac,
+                unused_frac,
+            )
         else:
             m = self.momentum
             self.conf_frac = m * self.conf_frac + (1 - m) * conf_frac
@@ -135,14 +155,16 @@ class FlexMatchThreshold:
 
     def learning_status(self) -> torch.Tensor:
         """Un-normalised learning status sigma_c."""
-        if self.normalize == 'count':
+        if self.normalize == "count":
             return self.conf_frac
         return self.conf_frac / self.pred_frac.clamp_min(1e-12)
 
     def beta(self) -> torch.Tensor:
         """Normalised (pre-mapping) learning status in [0, 1]."""
         sigma = self.learning_status()
-        denom = torch.maximum(sigma.max(), self.unused_frac) if self.warmup else sigma.max()
+        denom = (
+            torch.maximum(sigma.max(), self.unused_frac) if self.warmup else sigma.max()
+        )
         return (sigma / denom.clamp_min(1e-12)).clamp(0.0, 1.0)
 
     def thresholds(self) -> torch.Tensor:
@@ -150,46 +172,66 @@ class FlexMatchThreshold:
         return (map_beta(self.beta(), self.mapping) * self.tau).clamp_min(self.tau_min)
 
     @torch.no_grad()
-    def __call__(self, probs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __call__(self, probs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Update the status with this batch, then pseudo-label it."""
         self.update(probs)
         return get_pseudo_labels(self.thresholds(), probs, probs=True)
 
     def state_dict(self) -> dict:
         return {
-            'conf_frac': self.conf_frac.cpu(), 'pred_frac': self.pred_frac.cpu(),
-            'unused_frac': self.unused_frac.cpu(), 'steps': self.steps,
+            "conf_frac": self.conf_frac.cpu(),
+            "pred_frac": self.pred_frac.cpu(),
+            "unused_frac": self.unused_frac.cpu(),
+            "steps": self.steps,
         }
 
     def load_state_dict(self, state: dict):
-        self.conf_frac = state['conf_frac'].to(self.device)
-        self.pred_frac = state['pred_frac'].to(self.device)
-        self.unused_frac = state['unused_frac'].to(self.device)
-        self.steps = state['steps']
+        self.conf_frac = state["conf_frac"].to(self.device)
+        self.pred_frac = state["pred_frac"].to(self.device)
+        self.unused_frac = state["unused_frac"].to(self.device)
+        self.steps = state["steps"]
 
 
 @torch.no_grad()
-def cutmix_boxes(batch_size: int, height: int, width: int, p: float, device, area: Tuple[float, float] = (0.02, 0.4),
-                 ratio: Tuple[float, float] = (0.3, 1 / 0.3), generator: Optional[torch.Generator] = None) -> torch.Tensor:
+def cutmix_boxes(
+    batch_size: int,
+    height: int,
+    width: int,
+    p: float,
+    device,
+    area: tuple[float, float] = (0.02, 0.4),
+    ratio: tuple[float, float] = (0.3, 1 / 0.3),
+    generator: torch.Generator | None = None,
+) -> torch.Tensor:
     """Boolean (B, H, W) masks; True marks the box pasted from the partner sample. Rows are all False with prob 1-p."""
     boxes = torch.zeros(batch_size, height, width, dtype=torch.bool, device=device)
     for i in range(batch_size):
         if torch.rand(1, generator=generator).item() > p:
             continue
         for _ in range(10):  # rejection-sample a box that fits
-            a = torch.empty(1).uniform_(*area, generator=generator).item() * height * width
-            r = math.exp(torch.empty(1).uniform_(math.log(ratio[0]), math.log(ratio[1]), generator=generator).item())
+            a = (
+                torch.empty(1).uniform_(*area, generator=generator).item()
+                * height
+                * width
+            )
+            r = math.exp(
+                torch.empty(1)
+                .uniform_(math.log(ratio[0]), math.log(ratio[1]), generator=generator)
+                .item()
+            )
             h, w = int(round(math.sqrt(a / r))), int(round(math.sqrt(a * r)))
             if 0 < h <= height and 0 < w <= width:
                 y = torch.randint(0, height - h + 1, (1,), generator=generator).item()
                 x = torch.randint(0, width - w + 1, (1,), generator=generator).item()
-                boxes[i, y:y + h, x:x + w] = True
+                boxes[i, y : y + h, x : x + w] = True
                 break
     return boxes
 
 
 @torch.no_grad()
-def apply_cutmix(images: torch.Tensor, labels: torch.Tensor, masks: torch.Tensor, boxes: torch.Tensor):
+def apply_cutmix(
+    images: torch.Tensor, labels: torch.Tensor, masks: torch.Tensor, boxes: torch.Tensor
+):
     """Paste each sample's box region from its partner (the batch rolled by one) into images, labels and masks."""
     if not boxes.any() or images.shape[0] < 2:
         return images, labels, masks

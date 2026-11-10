@@ -1,12 +1,13 @@
-import torch
-from pytorch_lightning import LightningModule
-from objdetecteval.metrics.coco_metrics import get_coco_stats
-from transforms import get_train_transforms, get_valid_transforms
-from create_model import create_model
-from fastcore.dispatch import typedispatch
-from typing import List
 import numpy as np
+import torch
+from create_model import create_model
 from ensemble_boxes import ensemble_boxes_wbf
+from fastcore.dispatch import typedispatch
+from objdetecteval.metrics.coco_metrics import get_coco_stats
+from pytorch_lightning import LightningModule
+
+from transforms import get_valid_transforms
+
 
 def run_wbf(predictions, image_size=512, iou_thr=0.44, skip_box_thr=0.43, weights=None):
     bboxes = []
@@ -33,6 +34,7 @@ def run_wbf(predictions, image_size=512, iou_thr=0.44, skip_box_thr=0.43, weight
 
     return bboxes, confidences, class_labels
 
+
 class EfficientDetModel(LightningModule):
     def __init__(
         self,
@@ -43,7 +45,7 @@ class EfficientDetModel(LightningModule):
         gamma=0.8,
         wbf_iou_threshold=0.44,
         inference_transforms=get_valid_transforms(target_img_size=512),
-        model_architecture='tf_efficientnetv2_l',
+        model_architecture="tf_efficientnetv2_l",
     ):
         super().__init__()
         self.img_size = img_size
@@ -63,10 +65,11 @@ class EfficientDetModel(LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr)
-        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=0.8)
-        
-        return [optimizer], [scheduler]
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(
+            optimizer=optimizer, gamma=0.8
+        )
 
+        return [optimizer], [scheduler]
 
     def training_step(self, batch, batch_idx):
         images, annotations, _, image_ids = batch
@@ -79,45 +82,34 @@ class EfficientDetModel(LightningModule):
         }
 
         self.log_dict(
-            {
-                "train_loss": losses["loss"],
-                "step": self.current_epoch
-            },
+            {"train_loss": losses["loss"], "step": self.current_epoch},
             prog_bar=True,
             on_epoch=True,
             on_step=False,
-            logger=True
+            logger=True,
         )
 
         self.log_dict(
-            {
-                "train_box_loss": losses["box_loss"],
-                "step": self.current_epoch
-            },
+            {"train_box_loss": losses["box_loss"], "step": self.current_epoch},
             prog_bar=True,
             on_epoch=True,
             on_step=False,
-            logger=True
+            logger=True,
         )
 
         self.log_dict(
-            {
-                "train_class_loss": losses["class_loss"],
-                "step": self.current_epoch
-            },
+            {"train_class_loss": losses["class_loss"], "step": self.current_epoch},
             prog_bar=True,
             on_epoch=True,
             on_step=False,
-            logger=True
+            logger=True,
         )
-
-
 
         # self.log("train_loss", losses["loss"], on_step=False, on_epoch=True, prog_bar=True,
         #          logger=True)
         # self.log("train_loss_step", losses["loss"], on_step=True, on_epoch=False, prog_bar=True,
         #          logger=True,  )
-        
+
         # self.log(
         #     "train_class_loss", losses["class_loss"], on_step=False, on_epoch=True, prog_bar=True,
         #     logger=True
@@ -125,8 +117,7 @@ class EfficientDetModel(LightningModule):
         # self.log("train_box_loss", losses["box_loss"], on_step=False, on_epoch=True, prog_bar=True,
         #          logger=True)
 
-        return losses['loss']
-
+        return losses["loss"]
 
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):
@@ -147,41 +138,32 @@ class EfficientDetModel(LightningModule):
         }
 
         self.log_dict(
-            {
-                "val_loss": outputs["loss"],
-                "step": self.current_epoch
-            },
+            {"val_loss": outputs["loss"], "step": self.current_epoch},
             prog_bar=True,
             on_epoch=True,
             on_step=False,
-            logger=True
+            logger=True,
         )
 
         self.log_dict(
-            {
-                "val_box_loss": outputs["box_loss"],
-                "step": self.current_epoch
-            },
+            {"val_box_loss": outputs["box_loss"], "step": self.current_epoch},
             prog_bar=True,
             on_epoch=True,
             on_step=False,
-            logger=True
+            logger=True,
         )
 
         self.log_dict(
-            {
-                "val_class_loss": outputs["class_loss"],
-                "step": self.current_epoch
-            },
+            {"val_class_loss": outputs["class_loss"], "step": self.current_epoch},
             prog_bar=True,
             on_epoch=True,
             on_step=False,
-            logger=True
+            logger=True,
         )
 
         # self.log("val_loss", outputs["loss"], on_step=False, on_epoch=True, prog_bar=True,
         #          logger=True, sync_dist=True)
-        
+
         # self.log("val_loss_step", outputs["loss"], on_step=True, on_epoch=False, prog_bar=True,
         #          logger=True, sync_dist=True)
         # self.log(
@@ -190,14 +172,16 @@ class EfficientDetModel(LightningModule):
         # )
         # self.log("val_box_loss", logging_losses["box_loss"], on_step=False, on_epoch=True,
         #          prog_bar=True, logger=True, sync_dist=True)
-        
-        self.validation_step_outputs.append(outputs['loss'])
-        self.validation_step_preds.append({'loss': outputs["loss"], 'batch_predictions': batch_predictions})
 
-        return {'loss': outputs["loss"], 'batch_predictions': batch_predictions}
-    
+        self.validation_step_outputs.append(outputs["loss"])
+        self.validation_step_preds.append(
+            {"loss": outputs["loss"], "batch_predictions": batch_predictions}
+        )
+
+        return {"loss": outputs["loss"], "batch_predictions": batch_predictions}
+
     @typedispatch
-    def predict(self, images: List):
+    def predict(self, images: list):
         """
         For making predictions from images
         Args:
@@ -264,7 +248,7 @@ class EfficientDetModel(LightningModule):
         )
 
         return scaled_bboxes, predicted_class_labels, predicted_class_confidences
-    
+
     def _create_dummy_inference_targets(self, num_images):
         dummy_targets = {
             "bbox": [
@@ -279,7 +263,7 @@ class EfficientDetModel(LightningModule):
         }
 
         return dummy_targets
-    
+
     def post_process_detections(self, detections):
         predictions = []
         for i in range(detections.shape[0]):
@@ -323,12 +307,12 @@ class EfficientDetModel(LightningModule):
                 scaled_bboxes.append(bboxes)
 
         return scaled_bboxes
-    
+
     def aggregate_prediction_outputs(self, outputs):
 
         # for output in outputs:
         #     print(output)
-            
+
         detections = torch.cat(
             [output["batch_predictions"]["predictions"] for output in outputs]
         )
@@ -353,7 +337,7 @@ class EfficientDetModel(LightningModule):
             predicted_class_confidences,
             targets,
         )
-    
+
     def on_validation_epoch_end(self):
         """
         Compute and log training loss and accuracy at the epoch level.
@@ -365,7 +349,6 @@ class EfficientDetModel(LightningModule):
 
         validation_loss_mean = torch.stack(self.validation_step_outputs).mean()
         self.log("validation_epoch_average", validation_loss_mean)
-        
 
         (
             predicted_class_labels,
@@ -378,7 +361,7 @@ class EfficientDetModel(LightningModule):
         truth_image_ids = [target["image_id"].detach().item() for target in targets]
         truth_boxes = [
             target["bboxes"].detach()[:, [1, 0, 3, 2]].tolist() for target in targets
-        ] # convert to xyxy for evaluation
+        ]  # convert to xyxy for evaluation
         truth_labels = [target["labels"].detach().tolist() for target in targets]
 
         stats = get_coco_stats(
@@ -389,7 +372,7 @@ class EfficientDetModel(LightningModule):
             target_image_ids=truth_image_ids,
             target_bboxes=truth_boxes,
             target_class_labels=truth_labels,
-        )['All']
+        )["All"]
 
         self.validation_step_outputs.clear()
         self.validation_step_preds.clear()

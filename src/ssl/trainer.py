@@ -19,7 +19,7 @@ import json
 import logging
 import time
 import uuid
-from typing import Dict, Iterator, List, Optional
+from collections.abc import Iterator
 
 import numpy as np
 import torch
@@ -43,7 +43,9 @@ except ImportError:  # wandb is optional
     wandb = None
 
 
-def update_metrics(metric_logger: MetricLogger, preds: torch.Tensor, targets: torch.Tensor):
+def update_metrics(
+    metric_logger: MetricLogger, preds: torch.Tensor, targets: torch.Tensor
+):
     """Update a MetricLogger, dropping ignore pixels (each image is flattened to its valid pixels)."""
     valid = targets != IGNORE_INDEX
     if bool(valid.all()):
@@ -54,7 +56,7 @@ def update_metrics(metric_logger: MetricLogger, preds: torch.Tensor, targets: to
             metric_logger.update(preds=p[v].unsqueeze(0), targets=t[v].unsqueeze(0))
 
 
-def to_float(x) -> Optional[float]:
+def to_float(x) -> float | None:
     if x is None:
         return None
     return x.item() if isinstance(x, torch.Tensor) else float(x)
@@ -69,7 +71,7 @@ class FlexMatchSegTrainer:
         model: torch.nn.Module,
         l_loader,
         u_loader,
-        samplers: List,
+        samplers: list,
         steps_per_epoch: int,
         val_loader,
         proxy_loader,
@@ -77,11 +79,13 @@ class FlexMatchSegTrainer:
         optimizer: torch.optim.Optimizer,
         scheduler,
         checkpoint_manager: CheckpointManager,
-        ema: Optional[EMA] = None,
+        ema: EMA | None = None,
     ):
         self.conf = conf
-        self.model = model                  # DDP-wrapped, used for training
-        self.eval_model = model.module      # unwrapped, used for eval (no DDP collectives on single-rank calls)
+        self.model = model  # DDP-wrapped, used for training
+        self.eval_model = (
+            model.module
+        )  # unwrapped, used for eval (no DDP collectives on single-rank calls)
         self.l_loader, self.u_loader = l_loader, u_loader
         self.samplers = samplers
         self.steps_per_epoch = steps_per_epoch
@@ -93,16 +97,19 @@ class FlexMatchSegTrainer:
         self.device = conf.device
         self.fm = conf.flexmatch
         self.logger = logging.getLogger()
-        self.trainer_id = f'flexmatch_trainer_{uuid.uuid4()}'
-        self.amp = bool(conf.training.amp) and 'cuda' in self.device
+        self.trainer_id = f"flexmatch_trainer_{uuid.uuid4()}"
+        self.amp = bool(conf.training.amp) and "cuda" in self.device
 
         with open(conf.metadata.target_mapping_path) as f:
             mapping = json.load(f)
-        self.class_names = [name for name, _ in sorted(mapping.items(), key=lambda kv: kv[1]['class_idx'])]
+        self.class_names = [
+            name
+            for name, _ in sorted(mapping.items(), key=lambda kv: kv[1]["class_idx"])
+        ]
         self.num_classes = conf.model.config.classes
         self.palette = np.zeros((256, 3), dtype=np.uint8)
         for v in mapping.values():
-            self.palette[v['class_idx']] = v['rgb']
+            self.palette[v["class_idx"]] = v["rgb"]
 
         # HQ class index -> SAM class index, for proxy evaluation and pseudo-label diagnostics
         # (unused when the dataset has no proxy masks, e.g. sainfoin; unmapped classes go to IGNORE_INDEX)
@@ -111,49 +118,82 @@ class FlexMatchSegTrainer:
         hq_to_sam = torch.full((256,), IGNORE_INDEX, dtype=torch.long)
         for name, v in mapping.items():
             if proxy.enabled and name not in proxy.class_map:
-                raise KeyError(f"data.proxy.class_map has no entry for HQ class '{name}'")
-            hq_to_sam[v['class_idx']] = proxy.class_map.get(name, IGNORE_INDEX)
+                raise KeyError(
+                    f"data.proxy.class_map has no entry for HQ class '{name}'"
+                )
+            hq_to_sam[v["class_idx"]] = proxy.class_map.get(name, IGNORE_INDEX)
         self.hq_to_sam = hq_to_sam.to(self.device)
 
         self.thresholder = FlexMatchThreshold(
-            num_classes=self.num_classes, tau=self.fm.tau, mapping=self.fm.mapping, warmup=self.fm.warmup,
-            status=self.fm.status, normalize=self.fm.normalize, momentum=self.fm.momentum,
-            tau_min=self.fm.tau_min, device=self.device,
+            num_classes=self.num_classes,
+            tau=self.fm.tau,
+            mapping=self.fm.mapping,
+            warmup=self.fm.warmup,
+            status=self.fm.status,
+            normalize=self.fm.normalize,
+            momentum=self.fm.momentum,
+            tau_min=self.fm.tau_min,
+            device=self.device,
         )
 
         # Meters (MeanMetric syncs across ranks on compute)
-        meter_names = ['loss', 'l_loss', 'u_loss', 'conf_frac', 'pl_acc_conf', 'pl_acc_all', 'val_loss']
+        meter_names = [
+            "loss",
+            "l_loss",
+            "u_loss",
+            "conf_frac",
+            "pl_acc_conf",
+            "pl_acc_all",
+            "val_loss",
+        ]
         self.meters = {k: MeanMetric().to(self.device) for k in meter_names}
 
-        self.train_metrics = MetricLogger('Train Metrics (labeled)', self.num_classes, self.device)
-        self.val_metrics = MetricLogger('HQ Holdout Metrics', self.num_classes, self.device)
-        self.proxy_metrics = MetricLogger('Proxy Metrics (vs SAM masks)', len(self.sam_classes), self.device)
+        self.train_metrics = MetricLogger(
+            "Train Metrics (labeled)", self.num_classes, self.device
+        )
+        self.val_metrics = MetricLogger(
+            "HQ Holdout Metrics", self.num_classes, self.device
+        )
+        self.proxy_metrics = MetricLogger(
+            "Proxy Metrics (vs SAM masks)", len(self.sam_classes), self.device
+        )
 
         self.run = None
-        if conf.is_main and conf.wandb.enabled and conf.wandb.mode != 'disabled':
+        if conf.is_main and conf.wandb.enabled and conf.wandb.mode != "disabled":
             if wandb is None:
-                rank_log(True, self.logger.warning, 'wandb is not installed; continuing without it.')
+                rank_log(
+                    True,
+                    self.logger.warning,
+                    "wandb is not installed; continuing without it.",
+                )
             else:
                 self.run = wandb.init(
-                    project=conf.wandb.project, entity=conf.wandb.entity, name=conf.model_run,
-                    mode=conf.wandb.mode, config=OmegaConf.to_container(conf, resolve=True),
+                    project=conf.wandb.project,
+                    entity=conf.wandb.entity,
+                    name=conf.model_run,
+                    mode=conf.wandb.mode,
+                    config=OmegaConf.to_container(conf, resolve=True),
                 )
 
     # ------------------------------------------------------------------ helpers
     def _autocast(self):
-        return torch.autocast('cuda', dtype=torch.bfloat16, enabled=self.amp)
+        return torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.amp)
 
     def _ssl_active(self, epoch: int) -> bool:
         return bool(self.fm.enabled) and epoch > self.fm.unsup_warmup_epochs
 
-    def _labeled_loss(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    def _labeled_loss(
+        self, logits: torch.Tensor, targets: torch.Tensor
+    ) -> torch.Tensor:
         valid = targets != IGNORE_INDEX
         if bool(valid.all()):
             return self.criterion(logits, targets)
-        return self.criterion(logits, torch.where(valid, targets, torch.zeros_like(targets)), valid)
+        return self.criterion(
+            logits, torch.where(valid, targets, torch.zeros_like(targets)), valid
+        )
 
     # ------------------------------------------------------------------ training
-    def _train_step(self, l_batch, u_batch, ssl: bool) -> Dict[str, torch.Tensor]:
+    def _train_step(self, l_batch, u_batch, ssl: bool) -> dict[str, torch.Tensor]:
         l_img, l_targets, _ = l_batch
         l_img = l_img.to(self.device, non_blocking=True)
         l_targets = l_targets.to(self.device, non_blocking=True)
@@ -164,7 +204,11 @@ class FlexMatchSegTrainer:
             with self._autocast():
                 l_logits = self.model(l_img)
             l_loss = self._labeled_loss(l_logits.float(), l_targets)
-            out.update(loss=l_loss, l_loss=l_loss.detach(), u_loss=torch.zeros((), device=self.device))
+            out.update(
+                loss=l_loss,
+                l_loss=l_loss.detach(),
+                u_loss=torch.zeros((), device=self.device),
+            )
         else:
             weak, strong, sam, _ = u_batch
             weak = weak.to(self.device, non_blocking=True)
@@ -180,16 +224,24 @@ class FlexMatchSegTrainer:
             # Diagnostics: agreement of (collapsed) pseudo-labels with the old SAM masks
             sam_valid = sam != IGNORE_INDEX
             if sam_valid.any():
-                agree = (self.hq_to_sam[pseudo] == sam)
-                out['pl_acc_all'] = agree[sam_valid].float().mean()
+                agree = self.hq_to_sam[pseudo] == sam
+                out["pl_acc_all"] = agree[sam_valid].float().mean()
                 cm = sam_valid & conf_mask
                 if cm.any():
-                    out['pl_acc_conf'] = agree[cm].float().mean()
+                    out["pl_acc_conf"] = agree[cm].float().mean()
 
             # CutMix on the strong view, pseudo-labels and mask together
             if self.fm.cutmix_p > 0:
-                boxes = cutmix_boxes(strong.shape[0], strong.shape[2], strong.shape[3], self.fm.cutmix_p, self.device)
-                strong, pseudo, conf_mask = apply_cutmix(strong, pseudo, conf_mask, boxes)
+                boxes = cutmix_boxes(
+                    strong.shape[0],
+                    strong.shape[2],
+                    strong.shape[3],
+                    self.fm.cutmix_p,
+                    self.device,
+                )
+                strong, pseudo, conf_mask = apply_cutmix(
+                    strong, pseudo, conf_mask, boxes
+                )
 
             with self._autocast():
                 logits = self.model(torch.cat([l_img, strong]))
@@ -202,9 +254,14 @@ class FlexMatchSegTrainer:
                 if self.fm.scale_by_conf_fraction:
                     u_loss = u_loss * f
             else:
-                u_loss = s_logits.sum() * 0.0   # keep the graph identical across ranks
+                u_loss = s_logits.sum() * 0.0  # keep the graph identical across ranks
             u_loss = self.fm.lam * u_loss
-            out.update(loss=l_loss + u_loss, l_loss=l_loss.detach(), u_loss=u_loss.detach(), conf_frac=f)
+            out.update(
+                loss=l_loss + u_loss,
+                l_loss=l_loss.detach(),
+                u_loss=u_loss.detach(),
+                conf_frac=f,
+            )
 
         update_metrics(self.train_metrics, l_logits.detach().argmax(1), l_targets)
         return out
@@ -215,25 +272,36 @@ class FlexMatchSegTrainer:
             m.reset()
         self.train_metrics.reset()
         for s in self.samplers:
-            if hasattr(s, 'set_epoch'):
+            if hasattr(s, "set_epoch"):
                 s.set_epoch(epoch)
 
         ssl = self._ssl_active(epoch)
         l_iter: Iterator = iter(self.l_loader)
-        u_iter: Optional[Iterator] = iter(self.u_loader) if (ssl and self.u_loader is not None) else None
+        u_iter: Iterator | None = (
+            iter(self.u_loader) if (ssl and self.u_loader is not None) else None
+        )
 
-        p_bar = tqdm(range(self.steps_per_epoch), colour='yellow', disable=not is_main_process())
+        p_bar = tqdm(
+            range(self.steps_per_epoch), colour="yellow", disable=not is_main_process()
+        )
         for step in p_bar:
             self.optimizer.zero_grad(set_to_none=True)
             l_batch = next(l_iter)
             u_batch = next(u_iter) if u_iter is not None else None
             out = self._train_step(l_batch, u_batch, ssl)
-            out['loss'].backward()
+            out["loss"].backward()
             self.optimizer.step()
             if self.ema is not None:
                 self.ema.update_params()
 
-            for k in ('loss', 'l_loss', 'u_loss', 'conf_frac', 'pl_acc_conf', 'pl_acc_all'):
+            for k in (
+                "loss",
+                "l_loss",
+                "u_loss",
+                "conf_frac",
+                "pl_acc_conf",
+                "pl_acc_all",
+            ):
                 if k in out:
                     self.meters[k].update(out[k].detach())
             p_bar.set_description(
@@ -245,12 +313,12 @@ class FlexMatchSegTrainer:
 
         dist.barrier()
         # Every rank computes the same meters in the same order (compute() is a collective under DDP)
-        keys = ('loss', 'l_loss', 'u_loss') + (('conf_frac',) if ssl else ())
+        keys = ("loss", "l_loss", "u_loss") + (("conf_frac",) if ssl else ())
         if ssl and self.conf.data.sam_diagnostics and self.conf.data.proxy.enabled:
-            keys += ('pl_acc_conf', 'pl_acc_all')
+            keys += ("pl_acc_conf", "pl_acc_all")
         logs = {}
         for k in keys:
-            v = to_float(self.meters[k].compute())   # nan if no rank updated it
+            v = to_float(self.meters[k].compute())  # nan if no rank updated it
             if v is not None and not np.isnan(v):
                 logs[k] = v
         self.train_metrics.compute()
@@ -262,23 +330,30 @@ class FlexMatchSegTrainer:
     def _predict_full(self, img: torch.Tensor, size) -> torch.Tensor:
         with self._autocast():
             logits = self.eval_model(img.to(self.device, non_blocking=True))
-        return F.interpolate(logits.float(), size=size, mode='bilinear', align_corners=False)
+        return F.interpolate(
+            logits.float(), size=size, mode="bilinear", align_corners=False
+        )
 
     @torch.no_grad()
-    def _val_epoch(self, epoch: int) -> Optional[float]:
+    def _val_epoch(self, epoch: int) -> float | None:
         if self.val_loader is None:
             return None
         self.eval_model.eval()
-        self.meters['val_loss'].reset()
+        self.meters["val_loss"].reset()
         self.val_metrics.reset()
         with apply_ema(self.ema):
-            for img, target, _ in tqdm(self.val_loader, colour='blue', disable=not is_main_process(), desc=f'HQ val {epoch}'):
+            for img, target, _ in tqdm(
+                self.val_loader,
+                colour="blue",
+                disable=not is_main_process(),
+                desc=f"HQ val {epoch}",
+            ):
                 target = target.to(self.device)
                 logits = self._predict_full(img, target.shape[-2:])
-                self.meters['val_loss'].update(self._labeled_loss(logits, target))
+                self.meters["val_loss"].update(self._labeled_loss(logits, target))
                 update_metrics(self.val_metrics, logits.argmax(1), target)
         dist.barrier()
-        val_loss = to_float(self.meters['val_loss'].compute())
+        val_loss = to_float(self.meters["val_loss"].compute())
         self.val_metrics.compute()
         rank_log(self.conf.is_main, self.logger.info, self.val_metrics)
         return val_loss
@@ -290,7 +365,12 @@ class FlexMatchSegTrainer:
         self.eval_model.eval()
         self.proxy_metrics.reset()
         with apply_ema(self.ema):
-            for img, target, _ in tqdm(self.proxy_loader, colour='cyan', disable=not is_main_process(), desc=f'Proxy {epoch}'):
+            for img, target, _ in tqdm(
+                self.proxy_loader,
+                colour="cyan",
+                disable=not is_main_process(),
+                desc=f"Proxy {epoch}",
+            ):
                 target = target.to(self.device)
                 preds = self._predict_full(img, target.shape[-2:]).argmax(1)
                 update_metrics(self.proxy_metrics, self.hq_to_sam[preds], target)
@@ -313,88 +393,149 @@ class FlexMatchSegTrainer:
         with apply_ema(self.ema):
             for idx in range(min(len(dataset), self.conf.wandb.num_vis_images)):
                 img, target, img_ids = dataset[idx]
-                pred = self._predict_full(img.unsqueeze(0), target.shape[-2:]).argmax(1)[0].cpu().numpy()
-                raw = np.clip((img.numpy() * stds + means) * 255, 0, 255).astype(np.uint8).transpose(1, 2, 0)
+                pred = (
+                    self._predict_full(img.unsqueeze(0), target.shape[-2:])
+                    .argmax(1)[0]
+                    .cpu()
+                    .numpy()
+                )
+                raw = (
+                    np.clip((img.numpy() * stds + means) * 255, 0, 255)
+                    .astype(np.uint8)
+                    .transpose(1, 2, 0)
+                )
                 h, w = target.shape
-                raw = np.array(torch.nn.functional.interpolate(
-                    torch.from_numpy(raw).permute(2, 0, 1)[None].float(), size=(h, w), mode='bilinear'
-                )[0].permute(1, 2, 0).clamp(0, 255).byte())
+                raw = np.array(
+                    torch.nn.functional.interpolate(
+                        torch.from_numpy(raw).permute(2, 0, 1)[None].float(),
+                        size=(h, w),
+                        mode="bilinear",
+                    )[0]
+                    .permute(1, 2, 0)
+                    .clamp(0, 255)
+                    .byte()
+                )
                 gt = self.palette[target.numpy().clip(0, 255)]
                 pr = self.palette[pred]
-                blend = lambda c: np.clip(alpha * c + (1 - alpha) * raw, 0, 255).astype(np.uint8)
+                blend = lambda c: np.clip(alpha * c + (1 - alpha) * raw, 0, 255).astype(
+                    np.uint8
+                )
                 panel = np.concatenate([raw, blend(gt), blend(pr)], axis=1)[::4, ::4]
-                panels.append(wandb.Image(panel, caption=f'{img_ids}: image | HQ label | prediction'))
+                panels.append(
+                    wandb.Image(
+                        panel, caption=f"{img_ids}: image | HQ label | prediction"
+                    )
+                )
         return panels
 
     # ------------------------------------------------------------------ main loop
-    def _metric_dict(self, metric_logger: MetricLogger, names: List[str], prefix: str) -> dict:
+    def _metric_dict(
+        self, metric_logger: MetricLogger, names: list[str], prefix: str
+    ) -> dict:
         res = metric_logger.results
-        if not res or res.get('avg') is None:
+        if not res or res.get("avg") is None:
             return {}
-        d = {f'{prefix}/{k}': to_float(v) for k, v in res['avg'].items()}
-        for k, v in (res.get('mc') or {}).items():
+        d = {f"{prefix}/{k}": to_float(v) for k, v in res["avg"].items()}
+        for k, v in (res.get("mc") or {}).items():
             for i, name in enumerate(names):
                 if i < v.numel():
-                    d[f'{prefix}/{k}/{name}'] = to_float(v[i])
+                    d[f"{prefix}/{k}/{name}"] = to_float(v[i])
         return d
 
     def train(self):
-        rank_log(self.conf.is_main, self.logger.info,
-                 f'Training {self.trainer_id} for {self.conf.training.epochs} epochs x {self.steps_per_epoch} steps.')
+        rank_log(
+            self.conf.is_main,
+            self.logger.info,
+            f"Training {self.trainer_id} for {self.conf.training.epochs} epochs x {self.steps_per_epoch} steps.",
+        )
         proxy_every = max(1, int(self.conf.data.proxy.every_n_epochs))
 
         for epoch in range(1, self.conf.training.epochs + 1):
             t0 = time.time()
             train_logs = self._train_epoch(epoch)
             val_loss = self._val_epoch(epoch)
-            ran_proxy = (epoch % proxy_every == 0 or epoch == self.conf.training.epochs) and self._proxy_epoch(epoch)
+            ran_proxy = (
+                epoch % proxy_every == 0 or epoch == self.conf.training.epochs
+            ) and self._proxy_epoch(epoch)
 
             thresholds = self.thresholder.thresholds().cpu()
             status = self.thresholder.learning_status().cpu()
-            rank_log(self.conf.is_main, self.logger.info,
-                     f"Epoch {epoch} ({time.time() - t0:.0f}s) - train {train_logs} - val_loss {val_loss} - "
-                     f"thresholds {dict(zip(self.class_names, [round(t, 3) for t in thresholds.tolist()]))}")
+            rank_log(
+                self.conf.is_main,
+                self.logger.info,
+                f"Epoch {epoch} ({time.time() - t0:.0f}s) - train {train_logs} - val_loss {val_loss} - "
+                f"thresholds {dict(zip(self.class_names, [round(t, 3) for t in thresholds.tolist()]))}",
+            )
 
-            val = self._metric_dict(self.val_metrics, self.class_names, 'val') if val_loss is not None else {}
+            val = (
+                self._metric_dict(self.val_metrics, self.class_names, "val")
+                if val_loss is not None
+                else {}
+            )
             if self.run is not None:
-                log = {'epoch': epoch, 'lr': self.scheduler.get_last_lr()[0], 'val/loss': val_loss}
-                log.update({f'train/{k}': v for k, v in train_logs.items()})
+                log = {
+                    "epoch": epoch,
+                    "lr": self.scheduler.get_last_lr()[0],
+                    "val/loss": val_loss,
+                }
+                log.update({f"train/{k}": v for k, v in train_logs.items()})
                 log.update(val)
-                log.update(self._metric_dict(self.train_metrics, self.class_names, 'train'))
+                log.update(
+                    self._metric_dict(self.train_metrics, self.class_names, "train")
+                )
                 if ran_proxy:
-                    log.update(self._metric_dict(self.proxy_metrics, self.sam_classes, 'proxy'))
+                    log.update(
+                        self._metric_dict(self.proxy_metrics, self.sam_classes, "proxy")
+                    )
                 if self._ssl_active(epoch):
                     for i, name in enumerate(self.class_names):
-                        log[f'flexmatch/threshold/{name}'] = thresholds[i].item()
-                        log[f'flexmatch/status/{name}'] = status[i].item()
-                    log['flexmatch/unused_frac'] = self.thresholder.unused_frac.item()
-                log['val/predictions'] = self._vis_images()
+                        log[f"flexmatch/threshold/{name}"] = thresholds[i].item()
+                        log[f"flexmatch/status/{name}"] = status[i].item()
+                    log["flexmatch/unused_frac"] = self.thresholder.unused_frac.item()
+                log["val/predictions"] = self._vis_images()
                 self.run.log(log)
             dist.barrier()
 
             # Checkpoint (EMA weights cloned inside apply_ema so they are not overwritten on restore)
             with apply_ema(self.ema):
-                ema_state = {k: v.detach().cpu().clone() for k, v in self.model.module.state_dict().items()}
+                ema_state = {
+                    k: v.detach().cpu().clone()
+                    for k, v in self.model.module.state_dict().items()
+                }
             if val_loss is not None:
-                score = dict(val_loss=val_loss, MeanIoU=val.get('val/MeanIoU'), GeneralizedDiceScore=val.get('val/GeneralizedDiceScore'))
+                score = dict(
+                    val_loss=val_loss,
+                    MeanIoU=val.get("val/MeanIoU"),
+                    GeneralizedDiceScore=val.get("val/GeneralizedDiceScore"),
+                )
             elif ran_proxy or self.proxy_loader is None:
-                pm = self._metric_dict(self.proxy_metrics, self.sam_classes, 'proxy')
-                score = dict(val_loss=0.0, MeanIoU=pm.get('proxy/MeanIoU'), GeneralizedDiceScore=pm.get('proxy/GeneralizedDiceScore'))
+                pm = self._metric_dict(self.proxy_metrics, self.sam_classes, "proxy")
+                score = dict(
+                    val_loss=0.0,
+                    MeanIoU=pm.get("proxy/MeanIoU"),
+                    GeneralizedDiceScore=pm.get("proxy/GeneralizedDiceScore"),
+                )
             else:
                 score = None
             if score is not None and self.conf.is_main:
-                self.checkpoint_manager(logs={
-                    'epoch': epoch, **score,
-                    'model_state_dict': {k: v.detach().cpu().clone() for k, v in self.model.module.state_dict().items()},
-                    'ema_state_dict': ema_state,
-                    'flexmatch_state': self.thresholder.state_dict(),
-                    'class_names': self.class_names,
-                    'config': OmegaConf.to_container(self.conf, resolve=True),
-                })
+                self.checkpoint_manager(
+                    logs={
+                        "epoch": epoch,
+                        **score,
+                        "model_state_dict": {
+                            k: v.detach().cpu().clone()
+                            for k, v in self.model.module.state_dict().items()
+                        },
+                        "ema_state_dict": ema_state,
+                        "flexmatch_state": self.thresholder.state_dict(),
+                        "class_names": self.class_names,
+                        "config": OmegaConf.to_container(self.conf, resolve=True),
+                    }
+                )
             dist.barrier()
             if self.scheduler:
                 self.scheduler.step()
 
         if self.run is not None:
             self.run.finish()
-        rank_log(self.conf.is_main, self.logger.info, 'Training complete')
+        rank_log(self.conf.is_main, self.logger.info, "Training complete")

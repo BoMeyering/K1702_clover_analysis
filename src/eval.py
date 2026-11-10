@@ -10,11 +10,13 @@ Training and validation evaluation functions
 BoMeyering 2025
 """
 
+
 class AverageMeter:
     """
     AverageMeter implements a class which can be used to track a metric over the entire training process.
     (see https://github.com/CuriousAI/mean-teacher/)
     """
+
     def __init__(self):
         self.reset()
 
@@ -46,11 +48,13 @@ class AverageMeter:
             self=self, format=format
         )
 
+
 class AverageMeterSet:
     """
     AverageMeterSet implements a class which can be used to track a set of metrics over the entire training process
     based on AverageMeters (Source: https://github.com/CuriousAI/mean-teacher/)
     """
+
     def __init__(self):
         self.meters = {}
 

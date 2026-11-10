@@ -7,17 +7,18 @@ BoMeyering 2025
 """
 
 import math
+
 import torch
-from torch.utils.data import Sampler, Dataset
-from typing import Optional, List
 import torch.distributed as dist
+from torch.utils.data import Dataset, Sampler
+
 
 class DistributedInfiniteSampler(Sampler[int]):
     def __init__(
         self,
         dataset: Dataset,
-        num_replicas: Optional[int] = None,
-        rank: Optional[int] = None,
+        num_replicas: int | None = None,
+        rank: int | None = None,
         shuffle: bool = True,
         seed: int = 0,
         drop_last: bool = False,
@@ -40,10 +41,14 @@ class DistributedInfiniteSampler(Sampler[int]):
                 rank = dist.get_rank()
 
         if num_replicas is None or rank is None:
-            raise ValueError("num_replicas and rank must be set (either passed in or via torch.distributed)")
+            raise ValueError(
+                "num_replicas and rank must be set (either passed in or via torch.distributed)"
+            )
 
         if rank < 0 or rank >= num_replicas:
-            raise ValueError(f"Invalid rank {rank}, expected 0 <= rank < {num_replicas}")
+            raise ValueError(
+                f"Invalid rank {rank}, expected 0 <= rank < {num_replicas}"
+            )
 
         self.num_replicas = num_replicas
         self.rank = rank
@@ -61,11 +66,13 @@ class DistributedInfiniteSampler(Sampler[int]):
             self.num_samples = int(math.ceil(n / self.num_replicas))
 
         if self.num_samples == 0:
-            raise ValueError("DistributedInfiniteSampler computed num_samples=0; check dataset length/drop_last.")
+            raise ValueError(
+                "DistributedInfiniteSampler computed num_samples=0; check dataset length/drop_last."
+            )
 
         self.total_size = self.num_samples * self.num_replicas
 
-    def _rank_indices(self, pass_idx: int) -> List[int]:
+    def _rank_indices(self, pass_idx: int) -> list[int]:
         n = len(self.dataset)
 
         if self.shuffle:
@@ -86,7 +93,9 @@ class DistributedInfiniteSampler(Sampler[int]):
 
         indices = indices[self.rank : self.total_size : self.num_replicas]
         if len(indices) != self.num_samples:
-            raise RuntimeError(f"Expected {self.num_samples} indices for rank {self.rank}, got {len(indices)}")
+            raise RuntimeError(
+                f"Expected {self.num_samples} indices for rank {self.rank}, got {len(indices)}"
+            )
         return indices
 
     def __iter__(self):
@@ -100,5 +109,3 @@ class DistributedInfiniteSampler(Sampler[int]):
 
     def set_epoch(self, epoch: int) -> None:
         self.epoch = epoch
-
-

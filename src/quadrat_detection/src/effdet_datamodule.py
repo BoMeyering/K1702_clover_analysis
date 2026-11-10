@@ -1,19 +1,21 @@
 import torch
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader
-from torch.utils.data import DataLoader
-from transforms import get_train_transforms, get_valid_transforms, EfficientDetDataset
+
+from transforms import EfficientDetDataset, get_train_transforms, get_valid_transforms
+
 
 class EfficientDetDataModule(LightningDataModule):
-    
-    def __init__(self,
-                train_dataset_adaptor,
-                validation_dataset_adaptor,
-                train_transforms=get_train_transforms(target_img_size=512),
-                valid_transforms=get_valid_transforms(target_img_size=512),
-                num_workers=4,
-                batch_size=8):
-        
+    def __init__(
+        self,
+        train_dataset_adaptor,
+        validation_dataset_adaptor,
+        train_transforms=get_train_transforms(target_img_size=512),
+        valid_transforms=get_valid_transforms(target_img_size=512),
+        num_workers=4,
+        batch_size=8,
+    ):
+
         self.train_ds = train_dataset_adaptor
         self.valid_ds = validation_dataset_adaptor
         self.train_tfms = train_transforms
@@ -59,7 +61,7 @@ class EfficientDetDataModule(LightningDataModule):
         )
 
         return valid_loader
-    
+
     @staticmethod
     def collate_fn(batch):
         images, targets, image_ids = tuple(zip(*batch))
