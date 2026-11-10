@@ -12,7 +12,7 @@ data:
   image_dir: data/raw/sainfoin_leaves/images
   hq_target_dir: data/processed_hq/sainfoin_leaves/targets
   split_csv: null
-  holdout_ids: [TLI_E+K_923, TLI_SGF0898_002]
+  holdout_ids: [TLI_E+K_923, TLI_SGF0898_002, TLI_SGF1192_003]
   sam_diagnostics: false
   proxy:
     enabled: false

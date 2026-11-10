@@ -24,11 +24,11 @@ import segmentation_models_pytorch as smp
 import torch
 from omegaconf import OmegaConf
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data import DataLoader, DistributedSampler
+from torch.utils.data import DataLoader
 
 from src.ssl.callbacks import CheckpointManager
 from src.ssl.config import TrainSSLConfig, set_run_name
-from src.ssl.dataloaders import DistributedInfiniteSampler
+from src.ssl.dataloaders import DistributedEvalSampler, DistributedInfiniteSampler
 from src.ssl.datasets import LabeledDataset, UnlabeledDataset
 from src.ssl.distributed import set_env_ranks, setup_ddp, shutdown_ddp
 from src.ssl.loggers import rank_log, setup_loggers
@@ -131,9 +131,7 @@ def build_id_pools(conf):
 def eval_loader(ds, conf):
     if ds is None or len(ds) == 0:
         return None
-    sampler = DistributedSampler(
-        ds, num_replicas=conf.world_size, rank=conf.rank, shuffle=False, drop_last=False
-    )
+    sampler = DistributedEvalSampler(ds, num_replicas=conf.world_size, rank=conf.rank)
     return DataLoader(
         ds,
         batch_size=1,

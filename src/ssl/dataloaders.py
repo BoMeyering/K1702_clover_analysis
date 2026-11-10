@@ -109,3 +109,21 @@ class DistributedInfiniteSampler(Sampler[int]):
 
     def set_epoch(self, epoch: int) -> None:
         self.epoch = epoch
+
+
+class DistributedEvalSampler(Sampler[int]):
+    """Shard a dataset across ranks without padding, so every image is evaluated exactly once.
+
+    torch's DistributedSampler pads uneven splits by repeating samples (3 images on 2 ranks scores the
+    first one twice). Shards here may differ in length by one, which is only safe when the eval loop
+    runs no per-batch collectives (the trainer evaluates the unwrapped model and syncs metrics once).
+    """
+
+    def __init__(self, dataset: Dataset, num_replicas: int, rank: int):
+        self.indices = list(range(rank, len(dataset), num_replicas))
+
+    def __iter__(self):
+        return iter(self.indices)
+
+    def __len__(self):
+        return len(self.indices)

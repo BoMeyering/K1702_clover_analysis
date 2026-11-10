@@ -1,4 +1,4 @@
-# FlexMatch on the sainfoin leaf scans: 8 HQ Labelbox images labeled (2 held out for evaluation),
+# FlexMatch on the sainfoin leaf scans: 7 HQ Labelbox images labeled (3 held out for evaluation),
 # the other 625 scans unlabeled. Same scheme as flexmatch_hq10.yaml, but there are no SAM proxy masks
 # for this dataset, so proxy evaluation and pseudo-label diagnostics are off and checkpoints are
 # selected on the HQ holdout alone.
@@ -21,8 +21,10 @@ data:
   image_dir: data/raw/sainfoin_leaves/images
   hq_target_dir: data/processed_hq/sainfoin_leaves/targets
   split_csv: null             # no split file: every .jpg in image_dir is a candidate
-  # One E+K (lower-res) and one SGF scan, both with all four classes. Set to [] to train on all 10.
-  holdout_ids: [TLI_E+K_923, TLI_SGF0898_002]
+  # One E+K (lower-res) and one SGF scan with all four classes, plus a tagless SGF scan: the model
+  # learned to use the tag as a cue and misses sparse plants on tagless scans (e.g. TLI_SGF1192_001),
+  # and without a tagless holdout checkpoint selection cannot see that. Set to [] to train on all 10.
+  holdout_ids: [TLI_E+K_923, TLI_SGF0898_002, TLI_SGF1192_003]
   exclude_ids: []
   sam_diagnostics: false
   proxy:
