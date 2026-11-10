@@ -11,11 +11,9 @@ import omegaconf
 import inspect
 import logging
 import torch.nn as nn
-import torch.distributed as dist
 from contextlib import contextmanager
-from typing import List, Tuple, Optional, Any
+from typing import List, Tuple, Any
 from src.ssl.loggers import rank_log
-from src.ssl.distributed import is_main_process
 
 
 # Set up logger
@@ -293,13 +291,6 @@ class EMA:
 
             # Copy EMA param to live param
             param.copy_(self.shadow_params[name].to(param.device, non_blocking=True))
-
-    def update_and_assign_params(self):
-        """
-        Update shadow parameters and apply them to the model
-        """
-        self.update_params()
-        self.assign_params()
 
     @torch.no_grad()
     def restore_params(self):

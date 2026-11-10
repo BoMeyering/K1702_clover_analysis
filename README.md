@@ -27,6 +27,24 @@ $ uv run train_segmentation_model.py
 ```
 The top k=5 best model runs (based on the validation loss) will be stored in `checkpoints`.
 
+## `k1702` CLI
+`uv sync` installs a `k1702` command (defined in `src/cli.py`) for training and prediction with the `src/ssl` models.
+
+**Train** — uses every visible GPU by default and launches `torchrun` itself when there is more than one:
+```
+$ uv run k1702 train -c configs/flexmatch_sainfoin.yaml                     # all GPUs
+$ uv run k1702 train -c configs/flexmatch_sainfoin.yaml --gpus 1            # one GPU, no torchrun
+$ uv run k1702 train -c configs/supervised_sainfoin.yaml --devices 1        # pick GPUs (sets CUDA_VISIBLE_DEVICES)
+$ uv run k1702 train -c configs/flexmatch_sainfoin.yaml training.epochs=5 wandb.mode=disabled   # config overrides
+$ uv run k1702 train -c configs/flexmatch_sainfoin.yaml --dry-run           # print the torchrun command
+```
+
+**Predict** — rebuilds the model from the config stored in the checkpoint; every output is at the input image's full resolution:
+```
+$ uv run k1702 predict checkpoints/ssl/<run>/<run>_epoch_55_fitness-1.608057.pth data/raw/sainfoin_leaves/images -o outputs/predictions
+```
+Writes `masks/<stem>.png` (class indices), `color/<stem>.png`, `overlay/<stem>.jpg` and `class_areas.csv` (pixel count and fraction per class). Useful flags: `--tta` (flip averaging), `--weights model` (raw instead of EMA weights), `--save mask` (skip the renders), `--alpha`, `--overlay-skip`, `-b/--batch-size`. See `uv run k1702 predict --help`.
+
 ## Semi-Supervised Training (FlexMatch on the HQ masks)
 Tests how far 10 hand-drawn, high-quality masks go when every other image is used unlabeled. The code lives in `src/ssl/` and is ported from the `pgcview_v2_training_framework` FlexMatch trainer.
 

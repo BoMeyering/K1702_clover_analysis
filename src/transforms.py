@@ -92,19 +92,3 @@ def get_val_obj_transforms(resize: Tuple[int, int]):
 
     return transforms
 
-def get_inf_transforms(resize: Tuple[int, int]):
-    """_summary_
-
-    Args:
-        resize (Tuple[int, int]): _description_
-    """
-
-    transforms = A.Compose(
-        [
-            A.Resize(resize[0], resize[1], p=1.0),
-            A.Normalize(),
-            ToTensorV2()
-        ]
-    )
-
-    return transforms

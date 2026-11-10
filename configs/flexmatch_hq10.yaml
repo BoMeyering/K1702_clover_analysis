@@ -6,7 +6,7 @@ device: cuda
 logging_level: INFO
 
 images:
-  resize: [1024, 1024]       # same input size as inference_config.yaml
+  resize: [1024, 1024]       # same input size as the old quadrat/clover inference pipeline
   decode_reduction: 2
 
 data:
