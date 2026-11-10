@@ -70,7 +70,7 @@ class ModelCheckpoint:
 
             # If we now have too many checkpoints, remove the worst
             if len(self.top_checkpoints) > self.top_k:
-                worst_loss, worst_path = self.top_checkpoints.pop()
+                _, worst_path = self.top_checkpoints.pop()
                 if os.path.exists(worst_path):
                     os.remove(worst_path)
                     self.logger.info(

@@ -171,7 +171,7 @@ if __name__ == "__main__":
     world_size = torch.cuda.device_count()
     # If user runs with torchrun, the spawn is handled externally; torchrun will set RANK for each process.
     # So we spawn the main per-process by reading RANK from env (match your detection script behavior).
-    rank = int(os.environ.get("RANK", 0))
+    rank = int(os.environ.get("RANK", "0"))
     # ensure MASTER_ADDR/MASTER_PORT are set by the environment when using torchrun; otherwise use defaults
     os.environ.setdefault("MASTER_ADDR", "localhost")
     os.environ.setdefault("MASTER_PORT", "12355")

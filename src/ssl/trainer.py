@@ -417,9 +417,9 @@ class FlexMatchSegTrainer:
                 )
                 gt = self.palette[target.numpy().clip(0, 255)]
                 pr = self.palette[pred]
-                blend = lambda c: np.clip(alpha * c + (1 - alpha) * raw, 0, 255).astype(
-                    np.uint8
-                )
+                blend = lambda c, raw=raw: np.clip(
+                    alpha * c + (1 - alpha) * raw, 0, 255
+                ).astype(np.uint8)
                 panel = np.concatenate([raw, blend(gt), blend(pr)], axis=1)[::4, ::4]
                 panels.append(
                     wandb.Image(

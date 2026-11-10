@@ -298,7 +298,7 @@ class FocalLoss(torch.nn.Module):
             loss : torch.Tensor
                 A scalar loss value if reduction is 'mean' or 'sum', else a loss tensor of shape (N, H, W).
         """
-        N, C = logits.shape[:2]
+        C = logits.shape[1]
         if (
             isinstance(self.weights, torch.Tensor)
             and len(self.weights) != logits.shape[1]
@@ -971,7 +971,7 @@ class TvmfDiceLoss(torch.nn.Module):
         """
         # Calculate probabilities and targets
         probs = torch.softmax(logits, dim=1)
-        N, C = probs.shape[:2]
+        C = probs.shape[1]
         targets_oh = F.one_hot(targets, num_classes=C).movedim(-1, 1).float()
 
         # Flatten and normalize vectors for cosine similarity

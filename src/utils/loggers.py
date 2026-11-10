@@ -19,7 +19,7 @@ def setup_loggers(model_run: str, log_dir: str, log_level):
         args (argparse.Namespace): arguments object from the configuration file.
     """
     timestamp = datetime.now().isoformat(timespec="seconds").replace(":", "_")
-    filename = "_".join([model_run, timestamp]) + ".log"
+    filename = f"{model_run}_{timestamp}.log"
     filepath = Path(log_dir) / filename
 
     formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")

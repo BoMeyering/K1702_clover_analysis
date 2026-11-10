@@ -125,7 +125,6 @@ class ObjDetDataset(Dataset):
         bboxes = augmented["bboxes"]
         labels = [int(x) for x in augmented["labels"]]
 
-        _, new_h, new_w = img.shape
         bboxes = torch.as_tensor(bboxes, dtype=torch.float32)
         labels = torch.as_tensor(labels, dtype=torch.int64)
 

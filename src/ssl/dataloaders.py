@@ -63,7 +63,7 @@ class DistributedInfiniteSampler(Sampler[int]):
         if self.drop_last:
             self.num_samples = n // self.num_replicas
         else:
-            self.num_samples = int(math.ceil(n / self.num_replicas))
+            self.num_samples = math.ceil(n / self.num_replicas)
 
         if self.num_samples == 0:
             raise ValueError(

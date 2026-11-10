@@ -203,7 +203,7 @@ def main():
 
     pbar = tqdm(enumerate(train_loader), total=len(train_loader), dynamic_ncols=True)
     for batch_idx, batch in pbar:
-        imgs, annotations, _, img_ids = batch
+        imgs, annotations, _, _ = batch
 
         imgs = imgs.to(device)
         annotations = move_to_device(annotations, device)

@@ -219,7 +219,7 @@ def cutmix_boxes(
                 .uniform_(math.log(ratio[0]), math.log(ratio[1]), generator=generator)
                 .item()
             )
-            h, w = int(round(math.sqrt(a / r))), int(round(math.sqrt(a * r)))
+            h, w = round(math.sqrt(a / r)), round(math.sqrt(a * r))
             if 0 < h <= height and 0 < w <= width:
                 y = torch.randint(0, height - h + 1, (1,), generator=generator).item()
                 x = torch.randint(0, width - w + 1, (1,), generator=generator).item()

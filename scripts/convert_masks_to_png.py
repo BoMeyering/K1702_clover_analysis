@@ -20,7 +20,7 @@ for filename in filenames:
 
     if len(name_list) > 2:
         name_list = [accession, "20170608"]
-        img_array = cv2.imread(IMG_DIR / ("_".join([accession, "6_8_17"]) + ".jpg"))
+        img_array = cv2.imread(IMG_DIR / f"{accession}_6_8_17.jpg")
     else:
         name_list = [accession, "20170703"]
         img_array = cv2.imread(IMG_DIR / (accession + ".jpg"))

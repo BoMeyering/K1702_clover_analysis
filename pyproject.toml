@@ -87,3 +87,15 @@ explicit = true
 # objdetecteval's setup.py imports pkg_resources (removed in setuptools 81).
 [tool.uv.extra-build-dependencies]
 objdetecteval = ["setuptools<81"]
+
+[tool.ruff]
+# Legacy sub-pipelines and exploratory notebooks are not maintained to lint standards.
+extend-exclude = ["src/quadrat_detection", "src/mask_generation", "*.ipynb"]
+
+[tool.ruff.lint]
+ignore = [
+    "BLE001",  # broad `except Exception` is deliberate around optional logging / DDP setup
+    "B008",    # function calls in defaults (dataclass field factories, transform defaults)
+    "TRY004",  # ValueError vs TypeError for config type checks
+    "C408",    # dict() calls are fine
+]

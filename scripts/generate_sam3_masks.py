@@ -259,7 +259,8 @@ def main():
     summary_path = args.out_dir / "summary.csv"
     done = set()
     if summary_path.exists() and not args.overwrite:
-        done = {r["img_id"] for r in csv.DictReader(open(summary_path))}
+        with open(summary_path) as f:
+            done = {r["img_id"] for r in csv.DictReader(f)}
     fieldnames = [
         "img_id",
         "n_quadrat",

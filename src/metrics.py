@@ -128,9 +128,9 @@ class SegmentationMetricLogger:
         preds = preds.long().to(self.device)
         targets = targets.long().to(self.device)
 
-        for key, metric in self.avg_metrics.items():
+        for metric in self.avg_metrics.values():
             metric.update(preds, targets)
-        for key, metric in self.mc_metrics.items():
+        for metric in self.mc_metrics.values():
             metric.update(preds, targets)
 
     def compute(self):

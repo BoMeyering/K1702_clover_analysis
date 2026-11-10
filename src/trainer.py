@@ -4,6 +4,7 @@ Trainer Classes
 BoMeyering 2025
 """
 
+import contextlib
 import logging
 import os
 from abc import ABC, abstractmethod
@@ -49,11 +50,11 @@ class BaseTrainer(ABC):
                 self.rank = dist.get_rank()
                 self.world_size = dist.get_world_size()
             except Exception:
-                self.rank = int(os.environ.get("RANK", 0))
-                self.world_size = int(os.environ.get("WORLD_SIZE", 1))
+                self.rank = int(os.environ.get("RANK", "0"))
+                self.world_size = int(os.environ.get("WORLD_SIZE", "1"))
         else:
-            self.rank = int(os.environ.get("RANK", 0))
-            self.world_size = int(os.environ.get("WORLD_SIZE", 1))
+            self.rank = int(os.environ.get("RANK", "0"))
+            self.world_size = int(os.environ.get("WORLD_SIZE", "1"))
         self.is_master = self.rank == 0
 
     def train(self):
@@ -61,14 +62,12 @@ class BaseTrainer(ABC):
         self.logger.info(f"Training model for {self.epochs} epochs.")
         for epoch in range(1, self.epochs + 1):
             # If DistributedSampler is used, set epoch for shuffling
-            try:
+            with contextlib.suppress(Exception):
                 if hasattr(self.train_loader, "sampler") and isinstance(
                     self.train_loader.sampler,
                     torch.utils.data.distributed.DistributedSampler,
                 ):
                     self.train_loader.sampler.set_epoch(epoch)
-            except Exception:
-                pass
 
             self._train_epoch(epoch)
             self._val_epoch(epoch)
@@ -314,7 +313,7 @@ class ObjTrainer(BaseTrainer):
             p_bar.close()
 
     def _train_step(self, batch):
-        imgs, targets, img_ids = batch
+        imgs, targets, _ = batch
         imgs = [img.to(self.device) for img in imgs]
         targets = [{k: v.to(self.device) for k, v in t.items()} for t in targets]
 
